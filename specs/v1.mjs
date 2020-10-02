@@ -1,29 +1,3 @@
-/*
-  support webp images
-    how though
-      convert to png -> manipulate -> convert back?
-    support animations?
-      this would be tricky
-      do as implicit SEC_IMAGETABLE is active, with frame number being image index?
-        would also need special syntax in SEC_IMAGETABLE to support overriding this with your own mapping
-          perhaps an object of { src: 'anim.webp', frame: N } instead of a path
-            or 'frame|N|anim.webp' because SEC_IMAGETABLE needs to store it somehow
-          defaulting to frame 0 if it's an animated webp but no frame specified
-      might need to bump SEC_IMAGETABLE's count field and SEC_CURSOR's index field to 16bit
-        since animations could certainly be above 255 frames in length
-      will need to write custom parser in addition to using webp-converter
-        webpmux to dump unprocessed frames to webp
-        dwebp to convert the frames/regular webp to png
-        cwebp to convert back to webp (using -lossess -exact -z 9 -mt)
-        parser to extract data from webp, since apparently none of the shipped tools support doing it
-          webp.mjs to parse (await readWebP(path))
-          switch (type)
-            lossy: lossless: dwebp
-            extended:
-              hasAnim: for 0..frameCount, webpmux to extract
-              else: dwebp
-*/
-
 import fs from 'fs';
 import { basename, dirname, normalize, join as pathJoin } from 'path';
 import { Image } from '../image.mjs';
