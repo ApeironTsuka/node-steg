@@ -268,6 +268,7 @@ export class Image {
   async #loadWEBP(p, anim = undefined, frame = -1) {
     let webpImg = new WebP.Image();
     await webpImg.load(p);
+    try { fs.mkdirSync('./tmp'); } catch (e) {}
     if (frame == -1) {
       switch (webpImg.type) {
         case WebP.TYPE_LOSSY: case WebP.TYPE_LOSSLESS: case WebP.TYPE_EXTENDED: this.type = consts.IMGTYPE_WEBP; break;
@@ -292,6 +293,7 @@ export class Image {
     this.main = anim;
   }
   async #saveWEBP(p) {
+    try { fs.mkdirSync('./tmp'); } catch (e) {}
     switch (this.type) {
       case consts.IMGTYPE_WEBP:
         fs.writeFileSync('./tmp/tmp.png', PNG.sync.write(this.img, { deflateLevel: 9 }));

@@ -1,4 +1,4 @@
-import { util, consts, CreateBuilder } from 'steg';
+import { util, consts, CreateBuilder } from '../steg.mjs';
 import _PNG from 'pngjs';
 import fs from 'fs';
 
@@ -70,10 +70,9 @@ steg.inputImage('frame|0|tests/orig.webp')
     .setEncryption(consts.CRYPT_AES256)
     .setImageTable(['frame|1|tests/orig.webp', 'frame|0|tests/orig.webp'], ['frame|1|tests/out.webp', 'frame|0|tests/out.webp'])
     .moveImage(0)
-    .addDirectory('node_modules/steg', true, true)
-    .addFile('tests/test.mjs', 'tests/test.mjs')
+    .addDirectory('specs', true, true)
     .moveImage(1)
-    .addText('This is the full source code to extract this image', consts.TEXT_HONOR_COMPRESSION | consts.TEXT_HONOR_ENCRYPTION)
+    .addText('This contains the specs for how this image is formatted', consts.TEXT_HONOR_COMPRESSION | consts.TEXT_HONOR_ENCRYPTION)
     .save()
     .catch(console.log)
     .then(() => console.log('Testing loading...'))
