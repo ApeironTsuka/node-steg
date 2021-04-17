@@ -1,6 +1,6 @@
 {
   "name": "node-steg",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Over-complicated module for PNG/lossless WEBP-based steganography",
   "main": "steg.mjs",
   "scripts": {
@@ -13,9 +13,8 @@
   "author": "ApeironTsuka",
   "license": "ISC",
   "dependencies": {
-    "node-webpmux": "^1.0.0",
+    "node-webpmux": "^2.0.0",
     "pngjs": "^5.0.0",
-    "seedrandom": "^3.0.5",
-    "webp-converter": "^2.3.0"
+    "seedrandom": "^3.0.5"
   }
 }

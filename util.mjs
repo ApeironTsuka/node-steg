@@ -4,6 +4,7 @@ import { createCipheriv, createDecipheriv, pbkdf2, createSecretKey, createHash, 
 import seedrandom from 'seedrandom';
 export const Channels = { DEBUG: 4, VVERBOSE: 3, VERBOSE: 2, NORMAL: 1, SILENT: 0 };
 let _debug = false, _channel = Channels.NORMAL;
+const utilSalt = '9cec15573a52086a0266af3b05deabf8503421ca49de1a4625b8e4a585ba7f4d';
 export function debug(v) {
   if (v === undefined) { return _debug; }
   _debug = !!v;
@@ -31,6 +32,7 @@ export function baseConv(n, src, dst, k) {
 export function decToBin(d) { return baseConv(d.toString(), '0123456789', '01'); }
 export function binToDec(b) { return parseInt(baseConv(b, '01', '0123456789')); }
 export function hashToDec(h) { return parseInt(baseConv(h, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ', '0123456789')); }
+export function decToHash(d) { return baseConv(d.toString(), '0123456789', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 '); }
 export function pad(s, l, c) { let o = s; for (let i = s.length; i < l; i++) { o = c+o; } return o; }
 export function setChannel(chan) { _channel = chan; }
 export function print(chan, s) { if (chan <= _channel) { console.log(s); } }
@@ -95,6 +97,64 @@ export async function getCryptKey(pass, salt) {
 export function generateIV() { return randomBytes(16); }
 export function cryptaes256(key, iv) { return createCipheriv('aes-256-cbc', key, iv); }
 export function decryptaes256(key, iv) { return createDecipheriv('aes-256-cbc', key, iv); }
+export function cryptcamellia256(key, iv) { return createCipheriv('camellia-256-cbc', key, iv); }
+export function decryptcamellia256(key, iv) { return createDecipheriv('camellia-256-cbc', key, iv); }
+export function cryptaria256(key, iv) { return createCipheriv('aria-256-cbc', key, iv); }
+export function decryptaria256(key, iv) { return createDecipheriv('aria-256-cbc', key, iv); }
+export async function packString(s, pw) {
+  let fmods = [ ], bufs = [], b, st;
+  if (pw) {
+    let key = await getCryptKey(pw, utilSalt), iv = generateIV();
+    b = Buffer.alloc(17);
+    b[0] = 1;
+    iv.copy(b, 1);
+    bufs.push(b);
+    fmods.push(cryptaes256(key, iv)); }
+  else {
+    b = Buffer.alloc(1);
+    b[0] = 0;
+    bufs.push(b);
+  }
+  if (fmods.length > 0) {
+    b = st = fmods[0];
+    for (let i = 1, l = fmods.length; i < l; i++) { b.pipe(fmods[i]); b = fmods[i]; }
+    st.write(s, 'utf8');
+    st.end();
+    for await (const chunk of b) { bufs.push(chunk); }
+  } else { bufs.push(Buffer.from(s, 'binary')); }
+  return Buffer.concat(bufs);
+}
+export async function unpackString(s, pw) {
+  let fmods = [ ], buf = Buffer.from(s, 'binary'), bufs = [];
+  if ((buf[0]) && (!pw)) { throw new Error('Input blob is encrypted but no key provided'); }
+  else if ((buf[0]) && (pw)) {
+    let key = await getCryptKey(pw, utilSalt), iv = buf.slice(1, 17);
+    buf = buf.slice(16);
+    fmods.unshift(decryptaes256(key, iv));
+  }
+  buf = buf.slice(1);
+  if (fmods.length > 0) {
+    let b = fmods[0], st = b, txt = '';
+    for (let i = 1, l = fmods.length; i < l; i++) { b.pipe(fmods[i]); b = fmods[i]; }
+    st.write(buf);
+    st.end();
+    for await (const chunk of b) { txt += chunk; }
+    return txt;
+  } else { return buf.toString(); }
+}
+export function uintToVLQ(uint, chkSize) {
+  let out = [], i = 0, k, n = uint, s = chkSize-1, mask = (1<<s)-1;
+  while (true) {
+    k = n & (mask<<(s*i));
+    n -= k;
+    k = k >> s*i;
+    out.push(k);
+    if (n == 0) { break; }
+    i++;
+  }
+  out[out.length-1] |= 1<<s;
+  return out;
+}
 export class randr {
   constructor(s) { this._seed = 0; if (s) { this.seed = s; } }
   fgen(v) {

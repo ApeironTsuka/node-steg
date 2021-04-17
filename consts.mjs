@@ -1,4 +1,7 @@
 export default {
+  LATEST_MAJOR: 1,
+  LATEST_MINOR: 2,
+
   SEC_MODE: 1,
   SEC_RECT: 2,
   SEC_RAND: 3,
@@ -33,6 +36,8 @@ export default {
   
   CRYPT_NONE: 0,
   CRYPT_AES256: 1,
+  CRYPT_CAMELLIA256: 2,
+  CRYPT_ARIA256: 3,
   
   TEXT_HONOR_NONE: 0b0000,
   TEXT_HONOR_COMPRESSION: 0b1000,

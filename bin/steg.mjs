@@ -1,0 +1,324 @@
+import { util, consts, CreateBuilder } from '../steg.mjs';
+import fs from 'fs';
+import { StegFile, StegPartialFile, StegText } from '../stubs.mjs';
+
+let debug = false, channel = util.Channels.NORMAL;
+util.debug(debug);
+util.setChannel(channel);
+function parseCmdLine(args) {
+  let state = {}, tester = /^-/;
+  let test = (i, t, v) => {
+    if ((t) && (i >= args.length)) { return false; }
+    else if (tester.test(args[i])) {
+      if (t) { return false; }
+      throw new Error(`Expected argument, got flag at word ${i} (${args[i-1]} ${args[i]} ${args[i+1]})`);
+    }
+    if (t) { return (v && v == args[i] ? true : v ? false : true); }
+    else { return true; }
+  };
+  switch (args[0]) {
+    case '-pack': state.pack = true; break;
+    case '-unpack': state.unpack = true; break;
+    default: throw new Error('First argument must be -pack or -unpack');
+  }
+  if (state.pack) {
+    for (let i = 1, l = args.length; i < l; i++) {
+      switch (args[i]) {
+        case '-version': case '-ver': test(i+1); state.version = args[++i]; break;
+        case '-headmode': case '-hm': test(i+1); state.hm = args[++i]; break;
+        case '-headmodemask': case '-hmm': test(i+1); state.hmm = args[++i]; break;
+        case '-mode': case '-m': test(i+1); state.m = args[++i]; break;
+        case '-modemask': case '-mm': test(i+1); state.mm = args[++i]; break;
+        case '-salt': test(i+1); state.salt = args[++i]; if (test(i+1, true, 'raw')) { state.raw = true; i++; } break;
+        case '-alpha': test(i+1); state.alpha = parseInt(args[++i]); break;
+        case '-rand': if (test(i+1, true)) { state.rand = args[++i]; } else { state.rand = true; } break;
+        case '-dryrun': state.dryrun = true; if (test(i+1, true, 'comp')) { state.dryrunc = true; i++; } break;
+        case '-savemap': test(i+1); test(i+2); if (!state.savemap) { state.savemap = []; } state.savemap.push({ n: args[++i], p: args[++i] }); break;
+        case '-map': test(i+1); state.map = args[++i]; break;
+        case '-in': test(i+1); state.in = args[++i]; break;
+        case '-out': test(i+1); state.out = args[++i]; break;
+        case '-cursor': test(i+1); test(i+2); state.cursor = { x: parseInt(args[++i]), y: parseInt(args[++i]) }; break;
+        case '-getloadopts': case '-glo': test(i+1); state.glo = args[++i]; if (test(i+1, true, 'enc')) { s.gloe = true; i++; } break;
+        case '-newsec': case '-ns':
+          {
+            let s = {};
+            if (!state.secs) { state.secs = []; }
+            test(++i);
+            s.stype = args[i];
+            switch (args[i]) {
+              case 'file':
+                test(i+1); test(i+2);
+                s.path = args[++i];
+                if (test(i+1, true)) { s.name = args[++i]; }
+                if (test(i+1, true, 'comp')) { s.comp = true; i++; }
+                break;
+              case 'dir':
+                test(i+1);
+                s.path = args[++i];
+                if (test(i+1, true, 'full')) { s.full = true; i++; }
+                if (test(i+1, true, 'recurse')) { s.recurse = true; i++; }
+                if (test(i+1, true, 'comp')) { s.compressed  = true; i++; }
+                break;
+              case 'rand':
+                if (test(i+1, true)) { s.rand = args[++i]; i++; }
+                else { s.rand = true; }
+                break;
+              case 'imagetable':
+                s.table = { in: [], out: [] };
+                for (let x = i+1, xl = l; x < xl; x+=2) {
+                  let p = [];
+                  if (!test(x, true)) { break; }
+                  test(x); test(x+1);
+                  s.table.in.push(args[++i]);
+                  s.table.out.push(args[++i]);
+                }
+                break;
+              case 'rect':
+                test(i+1); test(i+2); test(i+3); test(i+4);
+                s.x = parseInt(args[++i]); s.y = parseInt(args[++i]);
+                s.w = parseInt(args[++i]); s.h = parseInt(args[++i]);
+                break;
+              case 'cursor':
+                test(i+1);
+                s.cmd = args[++i];
+                switch (s.cmd) {
+                  case 'push': case 'pop': break;
+                  case 'move':
+                    test(i+1); test(i+2);
+                    s.x = parseInt(args[++i]); s.y = parseInt(args[++i]);
+                    if (test(i+1, true)) { s.index = parseInt(args[++i]); }
+                    break;
+                  case 'image':
+                    test(i+1);
+                    s.index = parseInt(args[++i]);
+                    break;
+                  default: break;
+                }
+                break;
+              case 'compress':
+                test(i+1); test(i+2);
+                s.type = args[++i];
+                s.level = parseInt(args[++i]);
+                if (test(i+1, true, 'text')) { s.text = true; i++; }
+                break;
+              case 'encrypt':
+                test(i+1);
+                s.type = args[++i];
+                break;
+              case 'partialfile':
+                test(i+1); test(i+2);
+                s.path = args[++i];
+                s.index = parseInt(args[++i]);
+                if (test(i+1, true)) { s.name = args[++i]; }
+                if (test(i+1, true, 'comp')) { s.compressed = true; i++; }
+                break;
+              case 'partialfilepiece':
+                test(i+1); test(i+2);
+                s.index = parseInt(args[++i]);
+                s.size = parseInt(args[++i]);
+                if (test(i+1, true, 'final')) { s.final = true; i++; }
+                break;
+              case 'mode':
+                test(i+1);
+                s.mode = args[++i];
+                break;
+              case 'modemask':
+                test(i+1);
+                s.mask = args[++i];
+                break;
+              case 'alpha':
+                test(i+1);
+                s.alpha = parseInt(args[++i]);
+                break;
+              case 'text':
+                test(i+1);
+                s.text = args[++i];
+                if (test(i+1, true)) { s.honor = args[++i]; }
+                break;
+              default: throw new Error(`Unknown sect ${args[i]}`); break;
+            }
+            state.secs.push(s);
+          }
+          break;
+        case '-clearsec': case '-cs':
+          {
+            let s = {};
+            s.clear = true;
+            test(i+1);
+            s.type = args[++i];
+            switch (s.type) {
+              case 'rand':
+              case 'imagetable':
+              case 'rect':
+              case 'compress':
+              case 'encrypt':
+              case 'mode':
+              case 'modemask':
+              case 'alpha':
+                break;
+              default: throw new Error(`Unknown or unclearable sect ${s.type}`); break;
+            }
+            state.secs.push(s);
+          }
+          break;
+        case '-save': state.save = true; break;
+        default: throw new Error(`Unknown flag ${args[i]}`); break;
+      }
+    }
+  } else if (state.unpack) {
+    for (let i = 1, l = args.length; i < l; i++) {
+      switch (args[i]) {
+        case '-headmode': case '-hm': test(i+1); state.hm = args[++i]; break;
+        case '-headmodemask': case '-hmm': test(i+1); state.hmm = args[++i]; break;
+        case '-image': test(i+1); state.image = args[++i]; break;
+        case '-rand': test(i+1); state.rand = args[++i]; break;
+        case '-cursor': test(i+1); test(i+2); state.cursor = { x: parseInt(args[++i]), y: parseInt(args[++i]) }; break;
+        case '-loadmap': test(i+1); test(i+2); if (!state.loadmap) { state.loadmap = []; } state.loadmap.push({ n: args[++i], p: args[++i] }); break;
+        case '-salt': test(i+1); state.salt = args[++i]; if (test(i+1, true, 'raw')) { state.raw = true; i++; } break;
+        case '-setloadopts': case '-slo': test(i+1); state.slo = args[++i]; if (test(i+1, true, 'enc')) { s.sloe = true; i++; } break;
+        case '-extract': test(i+1); state.extract = args[++i]; break;
+        default: throw new Error(`Unknown flag ${args[i]}`); break;
+      }
+    }
+  }
+  return state;
+}
+function parseMode(m) {
+  let v = m.split('/');
+  for (let i = 0; i <= 1; i++) {
+    switch (v[i]) {
+      case '3': v[i] = consts.MODE_3BPP; break;
+      case '6': v[i] = consts.MODE_6BPP; break;
+      case '9': v[i] = consts.MODE_9BPP; break;
+      case '12': v[i] = consts.MODE_12BPP; break;
+      case '15': v[i] = consts.MODE_15BPP; break;
+      case '24': v[i] = consts.MODE_24BPP; break;
+      case '32': v[i] = consts.MODE_32BPP; break;
+      default: v[i] = consts.MODE_NONE; break;
+    }
+  }
+  return v[0] | (v[1] << 3);
+}
+function parseModeMask(m) {
+  let out = 0;
+  for (let i = 0, l = Math.min(3, m.length); i < l; i++) {
+    switch (m[i]) {
+      case 'r': out |= consts.MODEMASK_R; break;
+      case 'g': out |= consts.MODEMASK_G; break;
+      case 'b': out |= consts.MODEMASK_B; break;
+      default: break;
+    }
+  }
+  return out;
+}
+function parseHonor(h) {
+  let s = h.split('/'), o = 0;
+  if ((s[0] == 'encrypt') || (s[1] == 'encrypt')) { o |= consts.TEXT_HONOR_ENCRYPTION; }
+  if ((s[0] == 'compress') || (s[1] == 'compress')) { o |= consts.TEXT_HONOR_COMPRESSION; }
+  return o;
+}
+async function main() {
+  let state = parseCmdLine(process.argv.slice(2));
+  let major = consts.LATEST_MAJOR, minor = consts.LATEST_MINOR, bldr;
+  if (state.pack) {
+    if (state.version) { let v = state.version.split('.'); bldr = CreateBuilder(parseInt(v[0]), parseInt(v[1])); }
+    else { bldr = CreateBuilder(); }
+    bldr.cliPasswordHandler();
+    if (state.hm) { bldr.setHeaderMode(parseMode(state.hm)); }
+    if (state.hmm) { bldr.setHeaderModeMask(parseModeMask(state.hmm)); }
+    if (state.m) { bldr.setGlobalMode(parseMode(state.m)); }
+    if (state.mm) { bldr.setGlobalModeMask(parseModeMask(state.mm)); }
+    if (state.salt) { bldr.setSalt(state.salt, state.raw); }
+    if (state.alpha) { bldr.setGlobalAlphaBounds(Math.max(0, Math.min(7, state.alpha))); }
+    if (state.rand) { bldr.setGlobalSeed(state.rand); }
+    if (state.cursor) { bldr.setInitialCursor(state.cursor.x, state.cursor.y); }
+    if (state.dryrun) { bldr.dryrun(!!state.dryrunc); }
+    if (state.loadmap) { for (let i = 0, maps = state.loadmap, l = maps.length; i < l; i++) { bldr.loadMap(maps[i].n, maps[i].p); } }
+    if (state.in) { bldr.inputImage(state.in); }
+    if (state.out) { bldr.outputImage(state.out); }
+    if (state.secs) {
+      for (let i = 0, { secs } = state, l = secs.length; i < l; i++) {
+        let sec = secs[i];
+        switch (sec.stype) {
+          case 'file': bldr.addFile(sec.path, sec.name, !!sec.compressed); break;
+          case 'dir': bldr.addDirectory(sec.path, sec.full, sec.recurse, sec.compressed); break;
+          case 'rand':
+            if (sec.clear) { bldr.clearSeed(); }
+            else if (bldr.rand === true) { bldr.setSeed(decToHash(randomBytes(4).readUInt32LE())); }
+            else { bldr.setSeed(bldr.rand); }
+            break;
+          case 'imagetable': if (sec.clear) { bldr.clearImageTable(); } else { bldr.setImageTable(sec.table.in, sec.table.out); } break;
+          case 'rect': if (sec.clear) { bldr.clearRect(); } else { bldr.setRect(sec.x, sec.y, sec.w, sec.h); } break;
+          case 'cursor':
+            switch (sec.cmd) {
+              case 'push': bldr.pushCursor(); break;
+              case 'pop': bldr.popCursor(); break;
+              case 'move': bldr.moveCursor(sec.x, sec.y, sec.index); break;
+              case 'image': bldr.moveImage(sec.index); break;
+              default: throw new Error(`Unknown cursor command ${sec.cmd}`); break;
+            }
+            break;
+          case 'compress':
+            if (sec.clear) { bldr.clearCompression(); }
+            else {
+              switch (sec.type) {
+                case 'gzip': bldr.setCompression(consts.COMP_GZIP, sec.level); break;
+                case 'brotli': bldr.setCompression(consts.COMP_BROTLI, sec.level, sec.text); break;
+                default: throw new Error(`Unknown compression type ${sec.type}`); break;
+              }
+            }
+            break;
+          case 'encrypt':
+            if (sec.clear) { bldr.clearEncryption(); }
+            else {
+              switch (sec.type) {
+                case 'aes256': bldr.setEncryption(consts.CRYPT_AES256); break;
+                case 'camellia256': bldr.setEncryption(consts.CRYPT_CAMELLIA256); break;
+                case 'aria256': bldr.setEncryption(consts.CRYPT_ARIA256); break;
+                default: throw new Error(`Unknown encryption type ${sec.type}`); break;
+              }
+            }
+            break;
+          case 'partialfile': bldr.addPartialFile(sec.path, sec.name, sec.index, sec.compressed); break;
+          case 'partialfilepiece': bldr.addPartialFilePiece(sec.index, sec.size, sec.final); break;
+          case 'mode': if (sec.clear) { bldr.clearMode(); } else { bldr.setMode(parseMode(state.mode)); } break;
+          case 'modemask': if (sec.clear) { bldr.clearModeMask(); } else { bldr.setModeMask(parseModeMask(state.mask)); } break;
+          case 'alpha': if (sec.clear) { bldr.clearAlphaBounds(); } else { bldr.setAlphaBounds(Math.max(0, Math.min(7, state.alpha))); } break;
+          case 'text': bldr.addText(sec.text, parseHonor(sec.honor)); break;
+        }
+      }
+    }
+    if (state.glo) { fs.writeFileSync(state.glo, await bldr.getLoadOpts(true, state.gloe), 'binary'); }
+    if (state.save) {
+      if (state.savemap) { bldr.keep(); }
+      await bldr.save();
+      for (let i = 0, maps = state.savemap, l = maps.length; i < l; i++) { bldr.saveMap(maps[i].n, maps[i].p); }
+    }
+  } else if (state.unpack) {
+    bldr = CreateBuilder();
+    bldr.cliPasswordHandler();
+    if (state.hm) { bldr.setHeaderMode(parseMode(state.hm)); }
+    if (state.hmm) { bldr.setHeaderModeMask(parseModeMask(state.hmm)); }
+    if (state.rand) { bldr.setGlobalSeed(state.rand); }
+    if (state.cursor) { bldr.setInitialCursor(state.cursor.x, state.cursor.y); }
+    if (state.loadmap) { for (let i = 0, maps = state.loadmap, l = maps.length; i < l; i++) { bldr.loadMap(maps[i].n, maps[i].p); } }
+    if (state.salt) { bldr.setSalt(state.salt, state.raw); }
+    if (state.image) { bldr.inputImage(state.image); }
+    if (state.slo) { await bldr.setLoadOpts(fs.readFileSync(state.slo, 'binary'), true, state.sloe); }
+    let secs = await bldr.load();
+    if (state.extract) {
+      secs = await bldr.extractAll(secs, state.extract);
+      if (secs.length) {
+        console.log('Text sections:');
+        for (let i = 0, l = secs.length; i < l; i++) { console.log(secs[i]); }
+      }
+    } else {
+      for (let i = 0, l = secs.length; i < l; i++) {
+        if (secs[i] instanceof StegFile) { console.log(`File\n  Name: ${secs[i].name}\n  Size: ${secs[i].size}${secs[i].state.com?'\n  Compressed':''}${secs[i].state.enc?'\n  Encrypted':''}`); }
+        else if (secs[i] instanceof StegPartialFile) { console.log(`Partial File\n  Name: ${secs[i].name}\n  Size: ${secs[i].size}${secs[i].state.com?'\n  Compressed':''}${secs[i].state.enc?'\n  Encrypted':''}\n  Piece count: ${secs[i].count}`); }
+        else if (secs[i] instanceof StegText) { console.log(`Text\n  Size: ${secs[i].size}${secs[i].state.com?'\n  Compressed':''}${secs[i].state.enc?'\n  Encrypted':''}`); if (secs[i].size < 100) { console.log('  Text:', await secs[i].extract()); } else { console.log(`  Text length too long to comfortably preview (${secs[i].size})`); } }
+      }
+    }
+  }
+}
+main().then(()=>{});

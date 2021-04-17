@@ -5,8 +5,24 @@ CHANGELOG:
     added global mode mask to settings mask
     old mode mask behavior now known as the header mode mask
     bump SEC_IMAGETABLE and SEC_CURSOR indexs from 8bit to 16bit
+  v1.2
+    added missing flags to save() object documentation below (this change also backported to 1.1's spec)
+    corrected some things regarding the documentation of the object passed to pack()
+      added missing SEC_MODEMASK block (this change also backported to 1.1's spec)
+      removed 'count' from SEC_PARTIALFILE block as it was never used (this change also backported to 1.0 and 1.1's spec)
+    added 'x'/'y' to save()/load()
+    added 'keep' flag to save()
+    added 'salt' to save()/load()
+    added 'map' to save()/load()
+    cleaned up some wording around mode and mode mask (this change also backported to 1.1's spec)
+    changed several unsigned integer fields into unsigned VLQ (Variable-Length Quantity), with different chunk sizes
+      'size'/'length' type fields in 8bit chunks as values are not expected to exceed 16383 very often (2 chunks)
+      'index' type fields in 4bit chunks as values are not expected to exceed 7 very often (1 chunk)
+      fixed-sized fields, such as SEC_ENCRYPTION's IV or SEC_RAND's seed, are unchanged
+    added CAMELLIA256 and ARIA256 support to SEC_ENCRYPTION
 
 read(): read amount of data honoring any settings/arguments. Any overread is cached for the next read(s)
+vlq(): read a uint using the given chunk size. Any overread is cached for the next read(s)
 until(): typically, read(8bit) until bitmask is read
 can be given an initial 32 bit seed (as base 62) to hide the header. any SEC_RAND after will override
 Header part 1 (header mode and mode mask affect these):
@@ -14,7 +30,7 @@ Header part 1 (header mode and mode mask affect these):
   read(6bit): mode
 Header part 2 (global mode affects these, header mode mask affects settings but not section count):
   read(14bit): settings
-  read(9bit): section count (max 511)
+  vlq(4): section count (max 511)
 Data (global mode and mode mask affect these, unless a SEC_MODE and/or SEC_MODEMASK is in effect instead):
   loop over sections:
     read(9bit): section type. MSB is set to 1 to clear this section
@@ -45,14 +61,14 @@ Strings:
   end
 Sections:
   SEC_FILE:
-    read(24bit): file size
+    vlq(8): file size
     read(string): file name
     read(8*size): file
   SEC_RAND:
     read(32bit): seed
     write buffer is flushed when setting, but not when clearing
   SEC_IMAGETABLE:
-    read(16bit): number of images
+    vlq(4): number of images
     loop images:
       read(string): image file name
     end
@@ -60,12 +76,12 @@ Sections:
     allows you to have a small "controller" image holding the headers and several images holding files
     use SEC_CURSOR to jump between images
   SEC_RECT:
-    read(16bit*4): x, y, width, height
+    vlq(8)*4: x, y, width, height
     write buffer is flushed when setting, but not when clearing
   SEC_CURSOR:
     read(3bit): command
-    read(16bit): image index (only when command == 2 or 3)
-    read(16bit*2): x, y (only when command == 2)
+    vlq(4): image index (only when command == 2 or 3)
+    vlq(8)*2: x, y (only when command == 2)
     commands
       0 push image,x,y
       1 pop image,x,y
@@ -84,23 +100,26 @@ Sections:
       read(1bit): text mode
   SEC_ENCRYPTION:
     read(4bit): algorithm (from const table)
-    AES256:
+    AES256, CAMELLIA256, ARIA256:
       read(128bit): IV
-      AES-256-CBC, IV is auto-generated via cryto-safe PRNG
+      AES256: AES-256-CBC
+      CAMELLIA256: CAMELLIA-256-CBC
+      ARIA256: ARIA-256-CBC
+      IV is auto-generated via cryto-safe PRNG
       use this IV (and user-supplied password) to run the SEC_FILE through (happens after SEC_COMPRESSION)
       key is generated from password via pbkdf2 (sha1, 100000 iterations, unique per-version 32byte salt)
       salt can be overridden
   SEC_PARTIALFILE:
-    read(24bit): file size
+    vlq(8): file size
     read(string): file name
-    read(8bit): file index
+    vlq(4): file index
     declare a file stored in pieces
     file index is used to refer to it in the actual piece sections
   SEC_PARTIALFILEPIECE:
-    read(8bit): file index
-    read(8bit): piece index
+    vlq(4): file index
+    vlq(4): piece index
     read(1bit): last piece flag
-    read(24bit): piece size
+    vlq(8): piece size
     read(8*size): piece
     declare a piece of a file
     file index from the accompanying SEC_PARTIALFILE
@@ -114,7 +133,7 @@ Sections:
     change the alpha threshhold from the global one until either another SEC_ALPHA is found or SEC_ALPHA is cleared
   SEC_TEXT:
     read(4bit): sec honor mask
-    read(16bit): length
+    vlq(8): length
     read(8*length): data
     mask
       x000: honor SEC_COMPRESSION
@@ -134,6 +153,7 @@ input object to pack()
   headmodeMask: <mask>, // see modeMask
   mode: <mode>,
   modeMask: <mask>, // a 3-bit mask of which channels to use (RGB). A mask of 000 cannot be used unless MODE_32BPP is used as well
+  salt: <salt>, // hex string for the 32 byte salt, overriding the internal salt
   secs: [
     {
       id: SEC_FILE,
@@ -198,9 +218,12 @@ input object to pack()
   ],
   alpha: ..., // optional, see settings mask for allowed values between 0-255
   rand: <seed>, // optional
+  x: <x>, y: <y>, // initial cursor position
   dryrun: <true/false>, // only do a dry run; don't save the images, don't compress/encrypt, don't write any files, only return success/failure
   dryrunComp: <true/false>, // requires dryrun; does a full dryrun by fully encrypting/compressing files and performing all of the normal actions short of the final image saving
+  keep: <true/false>, // don't clean up the image table after a save() call, so that maps can be saved after
   in: '', // input image path
+  map: '', // path to use to load a map
   out: '' // output image path
 }
 
@@ -211,6 +234,9 @@ input object to unpack()
   headmodeMask: <mask>, // if needed
   image,
   rand: <seed>, // if needed
-  pws: [ '', ... ] // if needed for SEC_ENCRYPTION. Shifted off the top and used in order for each SEC_ENCRYPTION encountered. Any missing result in a call to requestPassword
+  x: <x>, y: <y>, // initial cursor position
+  map: '', // path to use to load a map
+  pws: [ '', ... ], // if needed for SEC_ENCRYPTION. Shifted off the top and used in order for each SEC_ENCRYPTION encountered. Any missing result in a call to requestPassword
+  salt: <salt> // hex string for the 32 byte salt, overriding the internal salt
 }
 

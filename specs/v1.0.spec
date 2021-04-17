@@ -157,7 +157,6 @@ input object to pack()
       id: SEC_PARTIALFILE, // SEC_GZIP and SEC_AES, if enabled, get applied to the source file here
       path: file path,
       index: <n>, // file index
-      count: <n>, // piece count
       compressed: <boolean> // if this file is already compressed so that SEC_COMPRESSION ignores it in packing
     },
     {

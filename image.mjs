@@ -1,38 +1,16 @@
 import _PNG from 'pngjs';
 import fs from 'fs';
-import { randr, print, Channels, binToDec, decToBin, pad } from './util.mjs';
+import { randr, print, Channels, binToDec, decToBin, pad, uintToVLQ } from './util.mjs';
 import consts from './consts.mjs';
 import WebP from 'node-webpmux';
 import { basename } from 'path';
 const PNG = _PNG.PNG;
-// since webp-converter has console.log calls you can't disable..
-import enwebp from 'webp-converter/src/cwebp.js';
-import dewebp from 'webp-converter/src/dwebp.js';
-import { execFile } from 'child_process';
-async function cwebp(pathIn, pathOut, opts = '') {
-  const args = `${opts} "${pathIn}" -o "${pathOut}"`;
-  return new Promise((res, rej) => {
-    execFile(`"${enwebp()}"`, args.split(/\s+/), { shell: true }, (err, stdout, stderr) => {
-      if (err) { rej(err); }
-      res(stdout ? stdout : stderr);
-    });
-  });
-}
-async function dwebp(pathIn, pathOut, opts = '-o') {
-  const args = `"${pathIn}" ${opts} "${pathOut}"`;
-  return new Promise((res, rej) => {
-    execFile(`"${dewebp()}"`, args.split(/\s+/), { shell: true }, (err, stdout, stderr) => {
-      if (err) { rej(err); }
-      res(stdout ? stdout : stderr);
-    });
-  });
-}
 
 export class Image {
   static map = {};
   constructor() { this.rand = new randr(); this.loaded = false; }
   async load(_p) {
-    let p = _p, frame = -1, anim;
+    let p = _p, frame = -1, webp;
     if (/\.png$/i.test(p)) { await this.#loadPNG(p); }
     else if (/\.webp$/i.test(p)) {
       if (/^frame\|[0-9]*\|/i.test(p)) {
@@ -40,12 +18,12 @@ export class Image {
         frame = parseInt(arr[1]);
         p = p.substr(arr[1].length+7);
       }
-      if (frame != -1) {
-        if (Image.map[p]) { anim = Image.map[p]; }
-        else { anim = Image.map[p] = new WebP.Image(); await anim.load(p); }
-      }
-      await this.#loadWEBP(p, anim, frame);
+      if (frame != -1) { this.frame = frame; }
+      if (Image.map[p]) { webp = Image.map[p]; }
+      else { webp = Image.map[p] = await this.#loadWEBP(p); }
+      await this.#loadWEBPData(webp, frame);
     } else { throw new Error(`Unknown image ext for "${p}"`); }
+    this.webp = webp;
     this.data = this.img.data;
     this.used = { count: 0, max: this.width*this.height };
     this.state = {};
@@ -59,12 +37,32 @@ export class Image {
     this.modeMask = consts.MODEMASK_RGB;
     this.actions = [];
   }
+  loadMap(p) {
+    let buf = Buffer.from(fs.readFileSync(p, 'binary'), 'binary'), { used } = this;
+    for (let i = 0, l = buf.length; i < l; i += 4) {
+      let x = buf.readUInt16LE(i), y = buf.readUInt16LE(i+2);
+      used.count++;
+      used[`${x},${y}`] = true;
+    }
+  }
   async save(p) {
     switch (this.type) {
       case consts.IMGTYPE_PNG: return this.#savePNG(p);
       case consts.IMGTYPE_WEBP:
       case consts.IMGTYPE_WEBPANIM: return this.#saveWEBP(p);
     }
+  }
+  saveMap(p) {
+    let { used } = this, keys = Object.keys(used);
+    let buf = Buffer.alloc((keys.length-2)*4), c = 0;
+    for (let i = 0, l = keys.length; i < l; i++) {
+      if (!/,/.test(keys[i])) { continue; }
+      let [x, y] = keys[i].split(',');
+      buf.writeUInt16LE(parseInt(x), c);
+      buf.writeUInt16LE(parseInt(y), c+2);
+      c += 4;
+    }
+    fs.writeFileSync(p, buf);
   }
   get width() { return this.img.width; }
   get height() { return this.img.height; }
@@ -198,6 +196,12 @@ export class Image {
     os += '00000000';
     return this.writeBits(os);
   }
+  writeInt(n, s) { return this.writeBits(pad(decToBin(n), s, '0')); }
+  writeVLQ(n, s) {
+    let b = uintToVLQ(n, s), os = '';
+    for (let i = 0, l = b.length; i < l; i++) { os += pad(decToBin(b[i]), s, '0'); }
+    return this.writeBits(os);
+  }
   readPixel(silent = false) {
     let { x, y } = this.cursor;
     let { img, data: d, alphaThresh, mode, modeMask } = this, pind = (y*(img.width*4))+(x*4);
@@ -245,6 +249,7 @@ export class Image {
       next();
     }
     k = buf.substr(0, count); this.buf = buf.substr(count);
+    print(Channels.DEBUG, `Read ${count} bits and got ${k}`);
     return k;
   }
   readString() {
@@ -256,7 +261,18 @@ export class Image {
     }
     return Buffer.from(s, 'hex').toString();
   }
+  readInt(s) { return binToDec(this.readBits(s)); }
+  readVLQ(c) {
+    let s = '', last = false, b;
+    while (!last) {
+      b = this.readBits(c);
+      if (b[0] == '1') { last = true; }
+      s = b.substr(1) + s;
+    }
+    return binToDec(s);
+  }
   static checkMode(m, c) { return (m&7)==c; }
+  static resetMap() { delete Image.map; Image.map = {}; }
 
   async #loadPNG(p) {
     let img = PNG.sync.read(fs.readFileSync(p));
@@ -265,57 +281,34 @@ export class Image {
   }
   async #savePNG(p) { fs.writeFileSync(p, PNG.sync.write(this.img, { deflateLevel: 9 })); }
 
-  async #loadWEBP(p, anim = undefined, frame = -1) {
-    let webpImg = new WebP.Image();
-    await webpImg.load(p);
-    try { fs.mkdirSync('./tmp'); } catch (e) {}
+  async #loadWEBP(p) {
+    let webp = new WebP.Image();
+    await webp.load(p);
+    return webp;
+  }
+  async #loadWEBPData(webp, frame = -1) {
+    await webp.initLib();
     if (frame == -1) {
-      switch (webpImg.type) {
-        case WebP.TYPE_LOSSY: case WebP.TYPE_LOSSLESS: case WebP.TYPE_EXTENDED: this.type = consts.IMGTYPE_WEBP; break;
-        default: throw new Error('Unhandled WebP type');
-      }
-      let pt = `./tmp/${basename(p)}.png`;
-      await dwebp(p, pt);
-      this.img = PNG.sync.read(fs.readFileSync(pt));
-      fs.unlinkSync(pt);
-    } else {
-      this.type = consts.IMGTYPE_WEBPANIM;
-      if ((frame < 0) || (frame >= webpImg.frameCount)) { throw new Error(`Frame ${frame} out of range (0-${webpImg.frameCount}) of animated webp "${p}"`); }
-      await anim.demuxAnim('./tmp', frame);
-      let pt = `./tmp/${basename(p, '.webp')}_${frame}.`;
-      await dwebp(`${pt}webp`, `${pt}png`);
-      this.img = PNG.sync.read(fs.readFileSync(`${pt}png`));
-      fs.unlinkSync(`${pt}webp`);
-      fs.unlinkSync(`${pt}png`);
+      this.type = consts.IMGTYPE_WEBP;
+      this.img = { width: webp.width, height: webp.height, data: await webp.getImageData() };
     }
-    this.webp = webpImg;
-    this.frame = frame;
-    this.main = anim;
+    else {
+      if ((frame < 0) || (frame >= webp.frames.length)) { throw new Error(`Frame ${frame} out of range (0-${webp.frameCount}) of animated webp "${p}"`); }
+      let f = webp.frames[frame];
+      this.type = consts.IMGTYPE_WEBPANIM;
+      this.img = { width: f.width, height: f.height, data: await webp.getFrameData(frame) };
+    }
   }
   async #saveWEBP(p) {
-    try { fs.mkdirSync('./tmp'); } catch (e) {}
+    let d = this.img.data;
     switch (this.type) {
       case consts.IMGTYPE_WEBP:
-        fs.writeFileSync('./tmp/tmp.png', PNG.sync.write(this.img, { deflateLevel: 9 }));
-        await cwebp('./tmp/tmp.png', p, '-lossless -exact -z 9 -mt');
-        fs.unlinkSync('./tmp/tmp.png');
+        await this.webp.setImageData(this.img.data, { width: this.img.width, height: this.img.height, lossless: 9, exact: true });
+        await this.webp.save(p);
         break;
       case consts.IMGTYPE_WEBPANIM:
-        fs.writeFileSync('./tmp/tmp.png', PNG.sync.write(this.img, { deflateLevel: 9 }));
-        await cwebp('./tmp/tmp.png', './tmp/tmp.webp', '-lossless -exact -z 9 -mt');
-        await this.main.replaceFrame('./tmp/tmp.webp', this.frame);
-        fs.unlinkSync('./tmp/tmp.png');
-        fs.unlinkSync('./tmp/tmp.webp');
-        if (p) {
-          await WebP.Image.muxAnim({
-            path: p,
-            frames: this.main.anim.frames,
-            width: this.main.width,
-            height: this.main.height,
-            bgColor: this.main.anim.bgColor,
-            loops: this.main.anim.loopCount
-          });
-        }
+        await this.webp.setFrameData(this.frame, this.img.data, { width: this.img.width, height: this.img.height, lossless: 9, exact: true });
+        if (p) { await this.webp.save(p); }
         break;
     }
   }
