@@ -101,10 +101,10 @@ export function cryptcamellia256(key, iv) { return createCipheriv('camellia-256-
 export function decryptcamellia256(key, iv) { return createDecipheriv('camellia-256-cbc', key, iv); }
 export function cryptaria256(key, iv) { return createCipheriv('aria-256-cbc', key, iv); }
 export function decryptaria256(key, iv) { return createDecipheriv('aria-256-cbc', key, iv); }
-export async function packString(s, pw) {
+export async function packString(s, pw, salt) {
   let fmods = [ ], bufs = [], b, st;
   if (pw) {
-    let key = await getCryptKey(pw, utilSalt), iv = generateIV();
+    let key = await getCryptKey(pw, salt || utilSalt), iv = generateIV();
     b = Buffer.alloc(17);
     b[0] = 1;
     iv.copy(b, 1);
@@ -124,11 +124,11 @@ export async function packString(s, pw) {
   } else { bufs.push(Buffer.from(s, 'binary')); }
   return Buffer.concat(bufs);
 }
-export async function unpackString(s, pw) {
+export async function unpackString(s, pw, salt) {
   let fmods = [ ], buf = Buffer.from(s, 'binary'), bufs = [];
   if ((buf[0]) && (!pw)) { throw new Error('Input blob is encrypted but no key provided'); }
   else if ((buf[0]) && (pw)) {
-    let key = await getCryptKey(pw, utilSalt), iv = buf.slice(1, 17);
+    let key = await getCryptKey(pw, salt || utilSalt), iv = buf.slice(1, 17);
     buf = buf.slice(16);
     fmods.unshift(decryptaes256(key, iv));
   }
@@ -169,5 +169,15 @@ export class randr {
         (typeof v === 'number') || (v instanceof Number)) { this._alg = seedrandom(v, { state: true }); this._seed = v; }
     else { this._alg = seedrandom('', { state: v }); this._seed = v; }
   }
+}
+export function convertSalt(salt, raw) {
+  let s = salt;
+  if ((raw) && (typeof s !== 'string') && (s.length != 64)) { throw new Error('Salt must be a hex string of length 64'); }
+  else if (typeof s === 'string') {
+    let hash = createHash('sha256');
+    hash.update(s);
+    s = hash.digest('hex');
+  } else { s = randomBytes(32).toString('hex'); }
+  return s;
 }
 export default { debug, Channels, setChannel, print };

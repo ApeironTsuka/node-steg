@@ -3,69 +3,114 @@ import fs from 'fs';
 import { randr, print, Channels, binToDec, decToBin, pad, uintToVLQ } from './util.mjs';
 import consts from './consts.mjs';
 import WebP from 'node-webpmux';
-import { basename } from 'path';
+import { dirname, basename } from 'path';
 const PNG = _PNG.PNG;
 
 export class Image {
   static map = {};
   constructor() { this.rand = new randr(); this.loaded = false; }
-  async load(_p) {
-    let p = _p, frame = -1, webp;
-    if (/\.png$/i.test(p)) { await this.#loadPNG(p); }
-    else if (/\.webp$/i.test(p)) {
-      if (/^frame\|[0-9]*\|/i.test(p)) {
-        let arr = p.split('|');
-        frame = parseInt(arr[1]);
-        p = p.substr(arr[1].length+7);
+  async load(o) {
+    let { path, buffer, name, map, frame } = o, type;
+    if (typeof o === 'string') { path = o; name = basename(o); }
+    if ((!path) && (!buffer)) { throw new Error('Must provide path or buffer (provided neither)'); }
+    if ((path) && (buffer)) { throw new Error('Must provide path or buffer (provided both)'); }
+    if (path) {
+      if (/\.png$/i.test(path)) { type = 'png'; }
+      else if (/\.webp$/i.test(path)) {
+        if (typeof o === 'string') {
+          if (/^frame\|[0-9]\|/i.test(path)) {
+            let arr = path.split('|');
+            frame = parseInt(arr[1]);
+            path = path.substr(arr[1].length+7);
+          }
+        }
+        this.type = 'webp';
       }
+      else { throw new Error(`Unknown image ext for "${path}"`); }
+    } else if (name) {
+      if (/\.png$/i.test(name)) { type = 'png'; }
+      else if (/\.webp$/i.test(name)) { type = 'webp'; }
+      else { throw new Error(`Unknown image ext for "${name}"`); }
+    } else { throw new Error('Must provide either `path` or `name`'); }
+    if (type == 'png') {
+      if (path) { await this.#loadPNG(path); }
+      else if (buffer) { await this.#loadPNGBuffer(buffer, name); }
+    } else {
+      let webp;
       if (frame != -1) { this.frame = frame; }
-      if (Image.map[p]) { webp = Image.map[p]; }
-      else { webp = Image.map[p] = await this.#loadWEBP(p); }
+      if (path) {
+        let bn = basename(path);
+        if (Image.map[bn]) { webp = Image.map[bn]; path = webp.path; }
+        else { webp = Image.map[bn] = await this.#loadWEBP(path); }
+      }
+      else if (buffer) { webp = await this.#loadWEBPBuffer(buffer, name); }
       await this.#loadWEBPData(webp, frame);
-    } else { throw new Error(`Unknown image ext for "${p}"`); }
-    this.webp = webp;
+      this.webp = webp;
+    }
+    this.isBuffer = !!buffer;
     this.data = this.img.data;
     this.used = { count: 0, max: this.width*this.height };
     this.state = {};
     this.rand.seed = -1;
     this.loaded = true;
-    this.src = p;
+    this.src = path || name;
     this.alphaThresh = 255;
     this.cursor = { x: 0, y: 0 };
     this.buf = '';
     this.mode = consts.MODE_3BPP;
     this.modeMask = consts.MODEMASK_RGB;
     this.actions = [];
+    if (map) { this.loadMap(typeof map == 'string' ? { path: map } : map); }
   }
-  loadMap(p) {
-    let buf = Buffer.from(fs.readFileSync(p, 'binary'), 'binary'), { used } = this;
+  loadMap(o) {
+    let { path, buffer, name } = o, buf, { used } = this;
+    if (path) {
+      let b;
+      try { b = fs.readFileSync(path, 'binary'); }
+      catch (e) { b = fs.readFileSync(`${dirname(this.src)}/${path}`, 'binary'); }
+      buf = Buffer.from(b, 'binary');
+    }
+    else { buf = buffer; }
     for (let i = 0, l = buf.length; i < l; i += 4) {
       let x = buf.readUInt16LE(i), y = buf.readUInt16LE(i+2);
       used.count++;
       used[`${x},${y}`] = true;
     }
+    if (this.master) { this.advanceCursor(); }
   }
-  async save(p) {
+  async save(o) {
+    let { path, buffer, mapOut: map } = o, buf;
     switch (this.type) {
-      case consts.IMGTYPE_PNG: return this.#savePNG(p);
+      case consts.IMGTYPE_PNG: buf = await this.#savePNG(path || buffer); break;
       case consts.IMGTYPE_WEBP:
-      case consts.IMGTYPE_WEBPANIM: return this.#saveWEBP(p);
+      case consts.IMGTYPE_WEBPANIM: buf = await this.#saveWEBP(path || buffer); break;
     }
+    if (buf) { this.buffer = buf; }
+    if (map) { this.saveMap(typeof map == 'string' ? { path: map } : map); }
   }
-  saveMap(p) {
-    let { used } = this, keys = Object.keys(used);
-    let buf = Buffer.alloc((keys.length-2)*4), c = 0;
+  saveMap(o) {
+    let { used } = this, keys = Object.keys(used), buf = Buffer.alloc((keys.length-2)*4), c = 0;
+    let { path, buffer, name } = o;
     for (let i = 0, l = keys.length; i < l; i++) {
       if (!/,/.test(keys[i])) { continue; }
       let [x, y] = keys[i].split(',');
       buf.writeUInt16LE(parseInt(x), c);
-      buf.writeUInt16LE(parseInt(y), c+2);
+      buf.writeUInt16LE(parseInt(y), c + 2);
       c += 4;
     }
-    fs.writeFileSync(p, buf);
+    if (path) { fs.writeFileSync(path, buf); }
+    else if (buffer) { this.mapBuffer = buf; }
   }
   get width() { return this.img.width; }
   get height() { return this.img.height; }
+  check() {
+    switch (this.type) {
+      case consts.IMGTYPE_PNG: return true;
+      case consts.IMGTYPE_WEBP: return this.webp.type == WebP.TYPE_LOSSLESS;
+      case consts.IMGTYPE_WEBPANIM: return this.webp.frames[this.frame].type == WebP.TYPE_LOSSLESS;
+      default: return false;
+    }
+  }
   setMode(mode) { if ((this.buf != '') && (this.master.writing)) { this.actions.push([0, mode]); } else { this.mode = mode; } }
   setModeMask(mask) { if ((this.buf != '') && (this.master.writing)) { this.actions.push([3, mask]); } else { this.modeMask = mask; } }
   setCursor(x, y) { if ((this.buf != '') && (this.master.writing)) { this.actions.push([2, x, y]); } else { this.cursor.x = x; this.cursor.y = y; } }
@@ -274,16 +319,26 @@ export class Image {
   static checkMode(m, c) { return (m&7)==c; }
   static resetMap() { delete Image.map; Image.map = {}; }
 
-  async #loadPNG(p) {
-    let img = PNG.sync.read(fs.readFileSync(p));
+  async #loadPNG(p) { this.#loadPNGBuffer(fs.readFileSync(p)); }
+  async #loadPNGBuffer(buffer) {
+    let img = PNG.sync.read(buffer);
     this.img = img;
     this.type = consts.IMGTYPE_PNG;
   }
-  async #savePNG(p) { fs.writeFileSync(p, PNG.sync.write(this.img, { deflateLevel: 9 })); }
+  async #savePNG(p) {
+    let b = PNG.sync.write(this.img, { deflateLevel: 9 });
+    if (this.isBuffer) { return b; }
+    else { fs.writeFileSync(p, b); }
+  }
 
   async #loadWEBP(p) {
     let webp = new WebP.Image();
     await webp.load(p);
+    return webp;
+  }
+  async #loadWEBPBuffer(buffer) {
+    let webp = new WebP.Image();
+    await webp.loadBuffer(buffer);
     return webp;
   }
   async #loadWEBPData(webp, frame = -1) {
@@ -304,11 +359,15 @@ export class Image {
     switch (this.type) {
       case consts.IMGTYPE_WEBP:
         await this.webp.setImageData(this.img.data, { width: this.img.width, height: this.img.height, lossless: 9, exact: true });
-        await this.webp.save(p);
+        if (this.isBuffer) { return await this.webp.saveBuffer(); }
+        else { await this.webp.save(p); }
         break;
       case consts.IMGTYPE_WEBPANIM:
         await this.webp.setFrameData(this.frame, this.img.data, { width: this.img.width, height: this.img.height, lossless: 9, exact: true });
-        if (p) { await this.webp.save(p); }
+        if (p) {
+          if (this.isBuffer) { return await this.webp.saveBuffer(); }
+          else { await this.webp.save(p); }
+        }
         break;
     }
   }

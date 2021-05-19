@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { util, consts, CreateBuilder } from '../steg.mjs';
 import fs from 'fs';
 import { StegFile, StegPartialFile, StegText } from '../stubs.mjs';
@@ -33,10 +35,30 @@ function parseCmdLine(args) {
         case '-alpha': test(i+1); state.alpha = parseInt(args[++i]); break;
         case '-rand': if (test(i+1, true)) { state.rand = args[++i]; } else { state.rand = true; } break;
         case '-dryrun': state.dryrun = true; if (test(i+1, true, 'comp')) { state.dryrunc = true; i++; } break;
-        case '-savemap': test(i+1); test(i+2); if (!state.savemap) { state.savemap = []; } state.savemap.push({ n: args[++i], p: args[++i] }); break;
-        case '-map': test(i+1); state.map = args[++i]; break;
-        case '-in': test(i+1); state.in = args[++i]; break;
-        case '-out': test(i+1); state.out = args[++i]; break;
+        case '-savemap': test(i+1); test(i+2); if (!state.savemap) { state.savemap = []; } state.savemap.push({ n: args[++i], p: args[++i] }); console.log('-savemap is deprecated and will be removed in 1.4.0'); break;
+        case '-map': test(i+1); state.map = args[++i]; console.log('-map is deprecated and will be removed in 1.4.0'); break;
+        case '-in':
+          {
+            let frame = -1, map = false, path;
+            test(i+1);
+            path = args[++i];
+            if (test(i+1, true)) { frame = args[++i]; }
+            if (test(i+1, true)) { map = args[++i]; }
+            if ((frame != -1) && (!/^[0-9]*$/.test(frame))) { map = frame; frame = -1; }
+            state.in = { frame: parseInt(frame), map, path };
+          }
+          break;
+        case '-out':
+          {
+            let frame = -1, map = false, path;
+            test(i+1);
+            path = args[++i];
+            if (test(i+1, true)) { frame = args[++i]; }
+            if (test(i+1, true)) { map = args[++i]; }
+            if ((frame != -1) && (!/^[0-9]*$/.test(frame))) { map = frame; frame = -1; }
+            state.out = { frame: parseInt(frame), map, path };
+          }
+          break;
         case '-cursor': test(i+1); test(i+2); state.cursor = { x: parseInt(args[++i]), y: parseInt(args[++i]) }; break;
         case '-getloadopts': case '-glo': test(i+1); state.glo = args[++i]; if (test(i+1, true, 'enc')) { s.gloe = true; i++; } break;
         case '-newsec': case '-ns':
@@ -65,12 +87,24 @@ function parseCmdLine(args) {
                 break;
               case 'imagetable':
                 s.table = { in: [], out: [] };
-                for (let x = i+1, xl = l; x < xl; x+=2) {
-                  let p = [];
-                  if (!test(x, true)) { break; }
-                  test(x); test(x+1);
-                  s.table.in.push(args[++i]);
-                  s.table.out.push(args[++i]);
+                {
+                  let where = 'in', frame = -1, map = false;
+                  for (let x = i+1, xl = l; x < xl; x++) {
+                    if (!test(x, true)) {
+                      switch (args[x]) {
+                        case '-frame': if (test(x+1)) { frame = parseInt(args[++x]); } break;
+                        case '-map': if (test(x+1)) { map = args[++x]; } break;
+                        default: throw new Error(`Unexpected flag ${args[x]}`);
+                      }
+                      continue;
+                    } else {
+                      s.table[where].push({ frame, map, path: args[x] });
+                      frame = -1;
+                      map = false;
+                      where = where == 'in' ? 'out' : 'in';
+                    }
+                    i = x;
+                  }
                 }
                 break;
               case 'rect':
@@ -170,10 +204,20 @@ function parseCmdLine(args) {
       switch (args[i]) {
         case '-headmode': case '-hm': test(i+1); state.hm = args[++i]; break;
         case '-headmodemask': case '-hmm': test(i+1); state.hmm = args[++i]; break;
-        case '-image': test(i+1); state.image = args[++i]; break;
+        case '-image':
+          {
+            let frame = -1, map = false, path;
+            test(i+1);
+            path = args[++i];
+            if (test(i+1, true)) { frame = args[++i]; }
+            if (test(i+1, true)) { map = args[++i]; }
+            if ((frame != -1) && (!/^[0-9]*$/.test(frame))) { map = frame; frame = -1; }
+            state.image = { frame: parseInt(frame), map, path };
+          }
+          break;
         case '-rand': test(i+1); state.rand = args[++i]; break;
         case '-cursor': test(i+1); test(i+2); state.cursor = { x: parseInt(args[++i]), y: parseInt(args[++i]) }; break;
-        case '-loadmap': test(i+1); test(i+2); if (!state.loadmap) { state.loadmap = []; } state.loadmap.push({ n: args[++i], p: args[++i] }); break;
+        case '-loadmap': test(i+1); test(i+2); if (!state.loadmap) { state.loadmap = []; } state.loadmap.push({ n: args[++i], p: args[++i] }); console.log('-loadmap is deprecated and will be removed in 1.4.0'); break;
         case '-salt': test(i+1); state.salt = args[++i]; if (test(i+1, true, 'raw')) { state.raw = true; i++; } break;
         case '-setloadopts': case '-slo': test(i+1); state.slo = args[++i]; if (test(i+1, true, 'enc')) { s.sloe = true; i++; } break;
         case '-extract': test(i+1); state.extract = args[++i]; break;
@@ -217,7 +261,7 @@ function parseHonor(h) {
   if ((s[0] == 'compress') || (s[1] == 'compress')) { o |= consts.TEXT_HONOR_COMPRESSION; }
   return o;
 }
-async function main() {
+async function run() {
   let state = parseCmdLine(process.argv.slice(2));
   let major = consts.LATEST_MAJOR, minor = consts.LATEST_MINOR, bldr;
   if (state.pack) {
@@ -292,7 +336,7 @@ async function main() {
     if (state.save) {
       if (state.savemap) { bldr.keep(); }
       await bldr.save();
-      for (let i = 0, maps = state.savemap, l = maps.length; i < l; i++) { bldr.saveMap(maps[i].n, maps[i].p); }
+      if (state.savemap) { for (let i = 0, maps = state.savemap, l = maps.length; i < l; i++) { bldr.saveMap(maps[i].n, maps[i].p); } }
     }
   } else if (state.unpack) {
     bldr = CreateBuilder();
@@ -321,4 +365,5 @@ async function main() {
     }
   }
 }
+async function main() { try { await run(); } catch (e) { console.log(e); } }
 main().then(()=>{});

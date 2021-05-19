@@ -1,6 +1,6 @@
 export default {
   LATEST_MAJOR: 1,
-  LATEST_MINOR: 2,
+  LATEST_MINOR: 3,
 
   SEC_MODE: 1,
   SEC_RECT: 2,

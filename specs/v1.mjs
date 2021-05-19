@@ -1,6 +1,5 @@
 import fs from 'fs';
 import { basename, dirname, normalize, join as pathJoin } from 'path';
-import { createHash, randomBytes } from 'crypto';
 import { Image } from '../image.mjs';
 import { Builder as _Builder } from '../builder.mjs';
 import consts from '../consts.mjs';
@@ -15,14 +14,15 @@ import { pad, randr,
          cryptcamellia256, decryptcamellia256,
          cryptaria256, decryptaria256,
          packString, unpackString,
-         copyf,
+         copyf, convertSalt,
          print, Channels, debug
        } from '../util.mjs';
 import { Steg, StegFile, StegPartialFile, StegText } from '../stubs.mjs';
 const VERSION_MAJOR = 1, VERSION_MINOR = 2;
 const CRYPT_SALT = {
   v11: '546ac12e6786afb81045a6401a0e0342cb341b450cfc06f87e081b7ec4cae6a7',
-  v12: '192f8633473d2a6e8a35e886d3f5c29bdf807bab22c73630efb54cc11d9aed23'
+  v12: '192f8633473d2a6e8a35e886d3f5c29bdf807bab22c73630efb54cc11d9aed23',
+  v13: 'cbd55f4182df039b40b20473528f2a658a102d20b87eedfe5b82f13dc414fe03'
 };
 function getSalt(a,b,h) {
   switch (a) { case 1: break; default: throw new Error(`Unknown major verion ${a}`); }
@@ -30,6 +30,7 @@ function getSalt(a,b,h) {
   switch (b) {
     case 1: return CRYPT_SALT.v11;
     case 2: return CRYPT_SALT.v12;
+    case 3: return CRYPT_SALT.v13;
     default: throw new Error(`Unknown minor version ${b}`);
   }
 }
@@ -46,10 +47,10 @@ export class v1 extends Steg {
     return await this.pwcb();
   }
   async save(input) {
-    let img = this.img = new Image(), headmode = input.headmode||consts.HEADMODE, headmodeMask = input.headmodeMask||consts.HEADMODEMASK, { mode, modeMask, secs, dryrun, dryrunComp, rand, x = 0, y = 0, salt, maps } = input, verMajor = input.verMajor||this.#VERSION_MAJOR, verMinor = input.verMinor||this.#VERSION_MINOR;
+    let img = this.img = new Image(), headmode = input.headmode||consts.HEADMODE, headmodeMask = input.headmodeMask||consts.HEADMODEMASK, { mode, modeMask, secs, dryrun, dryrunComp, rand, x = 0, y = 0, salt, maps, bufferMap } = input, verMajor = input.verMajor||this.#VERSION_MAJOR, verMinor = input.verMinor||this.#VERSION_MINOR;
     if (verMajor != this.#VERSION_MAJOR) { throw new Error(`Trying to build a version ${verMajor}.x with a ${this.#VERSION_MAJOR}.x constructor`); }
     switch (verMinor) {
-      case 0: case 1: case 2: break;
+      case 0: case 1: case 2: case 3: break;
       default: throw new Error(`Trying to build an unsupported version ${verMajor}.${verMinor}`);
     }
     this.verMajor = verMajor;
@@ -57,13 +58,31 @@ export class v1 extends Steg {
     this.dryrun = dryrun;
     this.dryrunComp = dryrunComp;
     this.salt = salt;
+    this.bufferMap = bufferMap || {};
     if (dryrun) { print(Channels.NORMAL, 'DOING A DRY RUN! No changes to any images will be saved.'); if (!dryrunComp) { print(Channels.NORMAL, 'No files will be created or modified.'); } }
     headmode = fixMode(headmode);
     mode = fixMode(mode);
     print(Channels.VERBOSE, `Packing version ${verMajor}.${verMinor}...`);
-    await img.load(input.in);
-    if (verMinor >= 2) { let bn = basename(input.in); if ((maps) && (maps[bn])) { img.loadMap(maps[bn]); } this.maps = maps; }
-    else {
+    {
+      let { path, buffer, name, map, frame } = input.in, mapPath, mapName, mapBuffer;
+      if (map) {
+        mapPath = typeof map == 'string' ? map : map.path;
+        mapName = map.name;
+        mapBuffer = bufferMap ? bufferMap[map.name] : undefined;
+        map = { path: mapPath, name: mapName, buffer: mapBuffer };
+      }
+      if (typeof input.in == 'string') { path = input.in; }
+      if ((bufferMap) && (bufferMap[name])) { buffer = bufferMap[name]; }
+      await img.load({ path, buffer, name, map, frame });
+    }
+    if (verMinor >= 2) { // remove for 1.4.0
+      let p = input.in.path || input.in;
+      if (typeof p == 'string') {
+        let bn = basename(p);
+        if ((maps) && (maps[bn])) { img.loadMap(maps[bn]); }
+        this.maps = maps;
+      }
+    } else {
       if (x !== 0) { x = 0; }
       if (y !== 0) { y = 0; }
     }
@@ -90,7 +109,8 @@ export class v1 extends Steg {
     this.alphaThresh = img.alphaThresh = bitsToAlpha(alphaToBits(input.alpha));
     switch (verMinor) {
       case 0: img.writeBits(alphaToBits(this.alphaThresh)+'00000000000'); break;
-      case 1: default: img.writeBits(alphaToBits(this.alphaThresh)+pad(decToBin(modeMask), 3, '0')+'00000000'); break;
+      case 1: case 2: img.writeBits(alphaToBits(this.alphaThresh)+pad(decToBin(modeMask), 3, '0')+'00000000'); break;
+      case 3: default: img.writeBits(alphaToBits(this.alphaThresh)+pad(decToBin(modeMask), 3, '0')); break;
     }
     if (headmodeMask != modeMask) { img.flush(); }
     this.master.modeMask = this.modeMask = modeMask;
@@ -104,25 +124,37 @@ export class v1 extends Steg {
       if (!await this.#packSec(secs[i])) { throw new Error(`Unknown sec id ${sec.id}`); }
     }
     img.flush();
-    if (!dryrun) { await img.save(input.out); }
-    await this.#saveImages();
-    print(Channels.NORMAL, `Number of pixels changed in ${input.out}: ${img.used.count} of ${img.width*img.height} (${Math.floor(img.used.count/(img.width*img.height)*10000)/100}%)`);
-    if (!input.keep) {
+    let ret = await this.#saveImages(input.out);
+    print(Channels.NORMAL, `Number of pixels changed in ${input.out.path||input.out.name||input.out}: ${img.used.count} of ${img.width*img.height} (${Math.floor(img.used.count/(img.width*img.height)*10000)/100}%)`);
+    if (!input.keep) { // remove for 1.4.0
       delete this.table;
       delete this.fullTable;
     }
-    return true;
+    return ret;
   }
   async load(input) {
-    let img = this.img = new Image(), headmode = input.headmode||consts.HEADMODE, headmodeMask = input.headmodeMask||consts.HEADMODEMASK, { in: image, rand, modeMask, x, y, salt, maps } = input, v, verMajor, verMinor, mode, secCount, ret;
+    let img = this.img = new Image(), headmode = input.headmode||consts.HEADMODE, headmodeMask = input.headmodeMask||consts.HEADMODEMASK, { in: image, rand, modeMask, x, y, salt, maps, bufferMap } = input, v, verMajor, verMinor, mode, secCount, ret;
     let usingInitPos = x !== undefined || y !== undefined;
     x = x !== undefined ? x : 0; y = y !== undefined ? y : 0;
     this._files = [];
     this._partialFiles = [];
     this._texts = [];
     this.fullTable = {};
-    await img.load(image);
-    if (maps) { let bn = basename(image); if (maps[bn]) { img.loadMap(maps[bn]); } }
+    this.bufferMap = bufferMap || {};
+    {
+      let { path, buffer, name, map, frame } = image, mapPath, mapName, mapBuffer;
+      if (map) {
+        mapPath = typeof map == 'string' ? map : map.path;
+        mapName = map.name;
+        mapBuffer = bufferMap ? bufferMap[map.name] : undefined;
+        map = { path: mapPath, name: mapName, buffer: mapBuffer };
+      }
+      if (typeof image == 'string') { path = image; }
+      if ((bufferMap) && (bufferMap[name])) { buffer = bufferMap[name]; }
+      await img.load({ path, buffer, name, map, frame });
+    }
+    if (!img.check()) { throw new Error(`Error loading ${image}: Not lossless`); }
+    if (maps) { let bn = basename(image); if (maps[bn]) { img.loadMap(maps[bn]); } } // remove for 1.4.0
     img.master = this.master = img;
     this.master.modeMask = this.modeMask = headmodeMask;
     img.state.pws = input.pws || [];
@@ -143,7 +175,7 @@ export class v1 extends Steg {
     }
     verMinor = img.readInt(6);
     switch (verMinor) {
-      case 0: case 1: case 2: break;
+      case 0: case 1: case 2: case 3: break;
       default: throw new Error(`Unsupported version ${verMajor}.${verMinor}`);
     }
     print(Channels.VVERBOSE, `Got version ${verMajor}.${verMinor}`);
@@ -160,15 +192,22 @@ export class v1 extends Steg {
     if ((headmodeMask&0b111 == 0) && (mode&consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (global)'); }
     img.setMode(mode);
     print(Channels.VERBOSE, 'Reading settings...');
-    v = img.readBits(14);
     switch (verMinor) {
       case 0:
+        v = img.readBits(14);
         if (v.substr(3) != '00000000000') { throw new Error(`Reserved settings space expected to be empty, but got ${v.substr(3)}. Is this a valid Steg image?`); }
         this.alphaThresh = img.alphaThresh = bitsToAlpha(v.substr(0, 3));
         print(Channels.VVERBOSE, `Got settings: threshhold ${this.alphaThresh}`);
         break;
-      case 1: default:
+      case 1: case 2:
+        v = img.readBits(14);
         if (v.substr(6) != '00000000') { throw new Error(`Reserved settings space expected to be empty, but got ${v.substr(6)}. Is this a valid Steg image?`); }
+        this.alphaThresh = img.alphaThresh = bitsToAlpha(v.substr(0, 3));
+        this.master.modeMask = this.modeMask = binToDec(v.substr(3, 3));
+        print(Channels.VVERBOSE, `Got settings: threshhold ${this.alphaThresh}, mode mask ${this.modeMask}`);
+        break;
+      case 3: default:
+        v = img.readBits(6);
         this.alphaThresh = img.alphaThresh = bitsToAlpha(v.substr(0, 3));
         this.master.modeMask = this.modeMask = binToDec(v.substr(3, 3));
         print(Channels.VVERBOSE, `Got settings: threshhold ${this.alphaThresh}, mode mask ${this.modeMask}`);
@@ -192,10 +231,14 @@ export class v1 extends Steg {
     if (index == this.imageIndex) { return false; }
     let i = this.table[index];
     if (!i.img.loaded) {
-      await i.img.load(i.input||i.name);
-      if ((this.minor >= 2) && (this.maps) && (this.maps[i.name])) { i.img.loadMap(this.maps[i.name]); }
+      let input = i.input || { name: i.name, path: i.path }, p = input.path || input.name || input, mapIn = i.mapIn;
+      if (this.bufferMap[input.name]) { i.buffer = this.bufferMap[input.name]; }
+      if ((this.verMinor >= 2) && (mapIn) && (this.bufferMap[mapIn.name || mapIn])) { mapIn = { name: mapIn.name || mapIn, buffer: this.bufferMap[mapIn.name || mapIn] }; }
+      await i.img.load({ path: i.buffer ? undefined : p, buffer: i.buffer, name: basename(p), map: mapIn, frame: i.frame });
+      if ((!this.master.writing) && (!i.img.check())) { throw new Error(`Error loading ${i.name}: Not lossless`); }
+      if ((this.verMinor >= 2) && (this.maps) && (this.maps[input.name])) { i.img.loadMap(this.maps[input.name]); } // remove for 1.4.0
     }
-    print(Channels.VERBOSE, `Switching to ${i.name}...`);
+    print(Channels.VERBOSE, `Switching to ${i.name}${i.frame?' frame '+i.frame:''}...`);
     if (this.img == i.img) { return false; }
     if (this.master.writing) { this.img.flush(); }
     else { this.img.clear(); }
@@ -207,17 +250,46 @@ export class v1 extends Steg {
     this.imageIndex = index;
     return true;
   }
-  async #saveImages() {
-    let img, t;
+  async #saveImages(o) {
+    let out = [], outmap = {}, img, t;
+    if (!this.dryrun) {
+      let { path, map: mapOut, buffer, name, frame } = o;
+      await this.master.save(typeof o === 'string' ? { path: o } : { img: this.master, path, mapOut, buffer, name, frame });
+      if (typeof o === 'string') { out.push({ path: o, img: this.master }); }
+      else {
+        let mapPath, mapName, mapBuffer;
+        if (mapOut) {
+          mapPath = typeof mapOut == 'string' ? mapOut : mapOut.path;
+          mapName = mapOut.name;
+          mapBuffer = mapOut.buffer ? this.master.mapBuffer : undefined;
+        }
+        out.push({ path, map: { path: mapPath, name: mapName, buffer: mapBuffer }, buffer: this.master.buffer, name, frame });
+      }
+      outmap[path||name||o] = true;
+    }
     for (let i = 0, { fullTable } = this, keys = Object.keys(fullTable), l = keys.length; i < l; i++) {
       t = fullTable[keys[i]];
       img = t.img;
       if (!img.loaded) { continue; }
-      if (img.master == img) { continue; }
+      if (img.master == img) { if (t.mapOut) { img.saveMap(typeof t.mapOut == 'string' ? { path: t.mapOut } : t.mapOut); } continue; }
       img.flush();
-      if (!this.dryrun) { await img.save(t.path); }
+      if (!this.dryrun) {
+        await img.save(t);
+        let { path, mapOut: map, buffer, name, frame } = t;
+        if (!outmap[path||name]) {
+          let mapPath, mapName, mapBuffer;
+          if (map) {
+            mapPath = typeof map == 'string' ? map : map.path;
+            mapName = map.name;
+            mapBuffer = map.buffer ? t.img.mapBuffer : undefined;
+          }
+          out.push({ path, map: { path: mapPath, name: mapName, buffer: mapBuffer }, buffer: t.img.buffer, name, frame });
+          outmap[path||name] = true;
+        }
+      }
       print(Channels.NORMAL, `Number of pixels changed in ${t.name}: ${img.used.count} of ${img.width*img.height} (${Math.floor(img.used.count/(img.width*img.height)*10000)/100}%)`);
     }
+    return out;
   }
   #prepFilePack(comp, crypt, text) {
     let { master } = this, fmods = []
@@ -356,7 +428,7 @@ export class v1 extends Steg {
     img.state.rand.seed = binToDec(s);
   }
   async #packSecTable(sec) {
-    let { img, fullTable } = this, table = this.table = [], z, bn, p;
+    let { img, fullTable } = this, table = this.table = [], z, bn, bnk, p;
     if (sec.rem) {
       print(Channels.VERBOSE, 'Clearing SEC_IMAGETABLE...');
       await this.#saveImages();
@@ -371,28 +443,54 @@ export class v1 extends Steg {
       case 1: img.writeInt(sec.out.length, 16); break;
       case 2: default: img.writeVLQ(sec.out.length, 4); break;
     }
-    print(Channels.VERBOSE, 'Packing file names...');
+    print(Channels.VERBOSE, 'Packing file table...');
     for (let i = 0, files = sec.out, l = files.length; i < l; i++) {
-      let fname = files[i], fnamebn = basename(fname);
+      let fname = files[i], fnamebn = basename(fname.path || fname.name || fname);
       p = sec.in[i];
-      if (/^frame\|[0-9]*\|/i.test(p)) {
-        let arr = p.split('|');
-        p = p.substr(arr[1].length+7);
-        bn = `frame|${parseInt(arr[1])}|${basename(p)}`;
-      } else { bn = basename(p); }
-      if (/^frame\|[0-9]*\|/i.test(fname)) {
-        let arr = fname.split('|');
-        fname = fname.substr(arr[1].length+7);
-        fnamebn = `frame|${parseInt(arr[1])}|${basename(fname)}`;
+      if (this.verMinor < 3) {
+        if (/^frame\|[0-9]*\|/i.test(p)) {
+          let arr = p.split('|');
+          p = p.substr(arr[1].length+7);
+          bn = `frame|${parseInt(arr[1])}|${basename(p)}`;
+        } else { bn = basename(p); }
+        if (/^frame\|[0-9]*\|/i.test(fname)) {
+          let arr = fname.split('|');
+          fname = fname.substr(arr[1].length+7);
+          fnamebn = `frame|${parseInt(arr[1])}|${basename(fname)}`;
+        }
+        img.writeString(fnamebn);
+        if (fullTable[bn]) { table.push(fullTable[bn]); continue; }
+        table.push(z = fullTable[bn] = { path: fname, name: fnamebn, input: p.path || p });
+        if (basename(img.src) == bn) { z.img = img; }
+        else if (`frame|${img.frame}|${basename(img.src)}` == bn) { z.img = img; }
+        else if (basename(this.master.src) == bn) { z.img = this.master; }
+        else if (`frame|${this.master.frame}|${basename(this.master.src)}` == bn) { z.img = this.master; }
+        else { z.img = new Image(); z.img.master = this.master; }
+      } else {
+        let hasFrame = typeof fname.frame !== 'undefined', hasMap = typeof p.map !== 'undefined';
+        img.writeInt(hasFrame ? 1 : 0, 1);
+        img.writeInt(hasMap ? 1 : 0, 1);
+        if (hasFrame) { img.writeVLQ(fname.frame, 4); }
+        if (hasMap) { img.writeString(typeof p.map == 'string' ? basename(p.map) : p.map.name || basename(p.map.path)); }
+        img.writeString(fnamebn);
+        bn = p.name || basename(p.path||p);
+        bnk = bn+(hasFrame ? `-${fname.frame}` : '');
+        if (fullTable[bnk]) { table.push(fullTable[bnk]); continue; }
+        table.push(z = fullTable[bnk] = {
+          path: fname.path,
+          buffer: fname.buffer,
+          name: fnamebn,
+          frame: fname.frame,
+          mapIn: p.map,
+          mapOut: fname.map,
+          input: p.path || p
+        });
+        if ((hasFrame) && (basename(img.src) == bn) && (img.frame == fname.frame)) { z.img = img; }
+        else if ((!hasFrame) && (basename(img.src) == bn)) { z.img = img; }
+        else if ((hasFrame) && (basename(this.master.src) == bn) && (this.master.frame == fname.frame)) { z.img = this.master; }
+        else if ((!hasFrame) && (basename(this.master.src) == bn)) { z.img = this.master; }
+        else { z.img = new Image(); z.img.master = this.master; }
       }
-      img.writeString(fnamebn);
-      if (fullTable[bn]) { table.push(fullTable[bn]); continue; }
-      table.push(z = fullTable[bn] = { path: fname, name: fnamebn, input: sec.in[i] });
-      if (basename(img.src) == bn) { z.img = img; }
-      else if (`frame|${img.frame}|${basename(img.src)}` == bn) { z.img = img; }
-      else if (basename(this.master.src) == bn) { z.img = this.master; }
-      else if (`frame|${this.master.frame}|${basename(this.master.src)}` == bn) { z.img = this.master; }
-      else { z.img = new Image(); z.img.master = this.master; }
     }
   }
   async #packSecRect(sec) {
@@ -737,20 +835,36 @@ export class v1 extends Steg {
       case 2: default: n = img.readVLQ(4); break;
     }
     print(Channels.VVERBOSE, `Got ${n}`);
-    print(Channels.VERBOSE, 'Reading file names...');
+    print(Channels.VERBOSE, 'Reading file table...');
     for (let i = 0; i < n; i++) {
-      v = img.readString();
-      vv = v.split('|');
-      print(Channels.VERBOSE, `Got ${v}`);
-      if (fullTable[v]) { table.push(fullTable[v]); continue; }
-      table.push(z = fullTable[v] = { name: v });
-      if (v == basename(img.src)) { z.img = img; }
-      else if (v == `frame|${img.frame}|${basename(img.src)}`) { z.img = img; }
-      else if (v == basename(master.src)) { z.img = master; }
-      else if (v == `frame|${master.frame}|${basename(master.src)}`) { z.img = master; }
-      else { z.img = new Image(); z.img.master = master; }
-      if (v == `frame|${vv[1]}|${basename(img.src)}`) { z.name = `frame|${vv[1]}|${img.src}`; }
-      else if (v == `frame|${vv[1]}|${basename(master.src)}`) { z.name = `frame|${vv[1]}|${master.src}`; }
+      if (this.verMinor < 3) {
+        v = img.readString();
+        vv = v.split('|');
+        print(Channels.VERBOSE, `Got ${v}`);
+        if (fullTable[v]) { table.push(fullTable[v]); continue; }
+        table.push(z = fullTable[v] = { name: v });
+        if (v == basename(img.src)) { z.img = img; }
+        else if (v == `frame|${img.frame}|${basename(img.src)}`) { z.img = img; }
+        else if (v == basename(master.src)) { z.img = master; }
+        else if (v == `frame|${master.frame}|${basename(master.src)}`) { z.img = master; }
+        else { z.img = new Image(); z.img.master = master; }
+        if (v == `frame|${vv[1]}|${basename(img.src)}`) { z.name = `frame|${vv[1]}|${img.src}`; }
+        else if (v == `frame|${vv[1]}|${basename(master.src)}`) { z.name = `frame|${vv[1]}|${master.src}`; }
+      } else {
+        let hasFrame = img.readInt(1), hasMap = img.readInt(1), frame, map, bn;
+        if (hasFrame) { frame = img.readVLQ(4); }
+        if (hasMap) { map = img.readString(); }
+        v = img.readString();
+        bn = v+(hasFrame ? `-${frame}` : '');
+        print(Channels.VERBOSE, `Got hasFrame ${hasFrame} hasMap ${hasMap}${hasFrame ? ' frame '+frame : ''}${hasMap ? ' map '+map : ''} name ${v}`);
+        if (fullTable[bn]) { table.push(fullTable[bn]); continue; }
+        table.push(z = fullTable[bn] = { name: v, frame, mapIn: map });
+        if ((hasFrame) && (basename(img.src) == v) && (img.frame == frame)) { z.img = img; }
+        else if ((!hasFrame) && (basename(img.src) == v)) { z.img = img; }
+        else if ((hasFrame) && (basename(master.src) == v) && (master.frame == frame)) { z.img = master; }
+        else if ((!hasFrame) && (basename(master.src) == v)) { z.img = master; }
+        else { z.img = new Image(); z.img.master = master; }
+      }
     }
     this.table = table;
   }
@@ -1090,7 +1204,7 @@ export class Builder extends _Builder {
     this.verMajor = verMajor;
     this.verMinor = verMinor;
     switch (verMajor) { case 1: break; default: throw new Error(`Unknown version ${verMajor}.x`); }
-    switch (verMinor) { case 0: case 1: case 2: break; default: throw new Error(`Unknown version ${verMajor}.${verMinor}`); }
+    switch (verMinor) { case 0: case 1: case 2: case 3: break; default: throw new Error(`Unknown version ${verMajor}.${verMinor}`); }
     this.clear();
   }
   get #VERSION_MAJOR() { return VERSION_MAJOR; }
@@ -1111,18 +1225,19 @@ export class Builder extends _Builder {
       pws: undefined,
       dryrun: false,
       dryrunComp: false,
-      keep: false,
+      keep: false, // remove for 1.4.0
       x: undefined,
       y: undefined,
       salt: undefined,
-      maps: undefined
+      maps: undefined, // remove for 1.4.0
+      bufferMap: undefined
     };
     Image.resetMap();
     return this;
   }
   dryrun(comp = false) { this.#out.dryrun = true; this.#out.dryrunComp = !!comp; return this; }
   realrun() { if (this.#out.dryrun) { delete this.#out.dryrun; delete this.#out.dryrunComp; } return this; }
-  keep(s = true) { this.#out.keep = !!s; return this; }
+  keep(s = true) { console.warn('keep is deprecated as of 1.3.0 and will be removed in 1.4.0'); this.#out.keep = !!s; return this; }
   setHeaderMode(mode) { this.#out.headmode = mode&0b111111; return this; }
   setGlobalMode(mode) { this.#out.mode = mode&0b111111; return this; }
   setHeaderModeMask(mask) { if (mask <= 0) { throw new Error('Mode mask must be greater than 0'); } this.#out.headmodeMask = mask&0b111; return this; }
@@ -1130,17 +1245,7 @@ export class Builder extends _Builder {
   setGlobalSeed(seed) { this.#out.rand = seed; return this; }
   setInitialCursor(x, y) { this.#out.x = x; this.#out.y = y; return this; }
   setPasswords(pws) { this.#out.pws = pws; return this; }
-  setSalt(salt, raw = false) {
-    let s = salt;
-    if ((raw) && (typeof s !== 'string') && (s.length != 64)) { throw new Error('Salt must be a hex string of length 64'); }
-    else if (typeof s === 'string') {
-      let hash = createHash('sha256');
-      hash.update(s);
-      s = hash.digest('hex');
-    } else { s = randomBytes(32).toString('hex'); }
-    this.#out.salt = s;
-    return this;
-  }
+  setSalt(salt, raw = false) { this.#out.salt = convertSalt(salt, raw); return this; }
   inputImage(path) { this.#out.in = path; return this; }
   outputImage(path) { this.#out.out = path; return this; }
   setGlobalAlphaBounds(b) {
@@ -1238,7 +1343,7 @@ export class Builder extends _Builder {
     for (let i = 0, l = paths.length; i < l; i++) { this.addFile(paths[i][0], paths[i][1], compressed); }
     return this;
   }
-  async getLoadOpts(packed, enc) {
+  async getLoadOpts(packed = false, enc = false, salt = false, raw = false) {
     if (!packed) {
       return {
         headmode: this.#out.headmode,
@@ -1249,12 +1354,15 @@ export class Builder extends _Builder {
         y: this.#out.y
       };
     } else {
-      let key = undefined;
-      if (enc) { key = await (this.getPasswordHandler())(); }
-      return packString(JSON.stringify(await this.getLoadOpts(false)), key);
+      let key = undefined, s = false;
+      if (enc) {
+        key = await (this.getPasswordHandler())();
+        if (salt !== false) { s = salt === true ? this.#out.salt : convertSalt(salt, raw); }
+      }
+      return packString(JSON.stringify(await this.getLoadOpts(false)), key, s);
     }
   }
-  async setLoadOpts(blob, packed, enc) {
+  async setLoadOpts(blob, packed = false, enc = false, salt = false, raw = false) {
     if (!packed) {
       this.#out.headmode = blob.headmode;
       this.#out.headmodeMask = blob.headmodeMask;
@@ -1263,23 +1371,28 @@ export class Builder extends _Builder {
       this.#out.x = blob.x;
       this.#out.y = blob.y;
     } else {
-      let key = undefined;
-      if (enc) { key = await (this.getPasswordHandler())(); }
-      this.setLoadOpts(JSON.parse(await unpackString(blob, key)), false);
+      let key = undefined, s = false;
+      if (enc) {
+        key = await (this.getPasswordHandler())();
+        if (salt !== false) { s = salt === true ? this.#out.salt : convertSalt(salt, raw); }
+      }
+      this.setLoadOpts(JSON.parse(await unpackString(blob, key, s)), false);
     }
   }
   async save() {
     let steg = new v1();
-    if (this.#out.keep) { this.#steg = steg; }
+    if (this.#out.keep) { this.#steg = steg; } // remove for 1.4.0
     steg.pwcb = this.getPasswordHandler();
     return steg.save(this.#out);
   }
   loadMap(n, p) {
+    console.warn('loadMap is deprecated as of 1.3.0 and will be removed in 1.4.0; please use the new object-based syntax described in the README for image loading');
     if (!this.#out.maps) { this.#out.maps = {}; }
     this.#out.maps[n] = p;
     return this;
   }
   saveMap(n, p) {
+    console.warn('saveMap is deprecated as of 1.3.0 and will be removed in 1.4.0; please use the new object-based syntax described in the README for image loading');
     if (this.#steg) {
       let { fullTable } = this.#steg;
       if (this.#steg.master.src == n) { this.#steg.master.saveMap(p); }
@@ -1287,9 +1400,10 @@ export class Builder extends _Builder {
     }
     return this;
   }
+  setBufferMap(map) { this.#out.bufferMap = map; return this; }
   async load() {
     let steg = new v1();
-    if (this.#out.keep) { this.#steg = steg; }
+    if (this.#out.keep) { this.#steg = steg; } // remove for 1.4.0
     steg.pwcb = this.getPasswordHandler();
     return steg.load(this.#out).then((secs) => { this.#secs = secs; return secs; });
   }

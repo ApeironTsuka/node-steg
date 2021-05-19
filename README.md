@@ -35,16 +35,16 @@ When it saves PNGs, it saves at compression 9 (highest). <br />
 When it saves WEBPs, it saves as lossless+exact (save transparent pixels). <br />
 For what I hope are obvious reasons, lossy formats can't work.
 
-For animated WEBP images, the syntax is mostly the same. However, when both supplying paths for saving and loading (except for one exception below) you must provide them in the format `frame|<frame number, starting at 0>|<path>`.
+For animated WEBP images, the syntax is mostly the same. However, when both supplying paths for saving and loading (except for one exception below) you must provide them in the format `{ frame: <frame number, starting at 0>, path: <path> }`.
 ```javascript
 steg.clear()
-    .inputImage('frame|0|animated.webp')
+    .inputImage({ frame: 0, path: 'animated.webp')
     .outputImage('out.webp') // This is the one exception where you don't need the special format
     // do things as normal
     .save();
 
 steg.clear()
-    .inputImage('frame|0|out.webp')
+    .inputImage({ frame: 0, path: 'out.webp')
     // etc
     .load()
     // etc
@@ -65,6 +65,29 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 
 ### Helper or utility
 
+#### Path Objects
+  Anywhere below where `path` is used, unless otherwise noted, can either be passed as a string or as the following object:<br />
+  For image paths:<br />
+```javascript
+{
+  path: <path string>, // if you're loading a file
+  buffer: <Buffer object>, // if you're loading a Buffer
+  name: <file name>, // if using a Buffer, it needs to know what name to refer to it as
+  map: <map object>, // optional, described below
+  map: <path string>, // for ease and consistency
+  frame: <frame number, starts at 0> // optional, only used with animated WebP images
+}
+```
+  For map paths:<br />
+```javascript
+{
+  path: <path>, // if you're loading a file
+  buffer: <Buffer object>, // if you're loading a Buffer
+  buffer: true, // if you're saving to a Buffer
+  name: <file name> // if using a Buffer, it needs to know what name to refer to it as
+}
+```
+
 #### `clear()`
   Resets the object for re-use.
 
@@ -75,7 +98,7 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 #### `realrun()`
   Switches to doing a real run. This way, if a dry run succeeds, you can call this and do a proper run.
 
-#### `keep(s = true)`
+#### `keep(s = true)` (DEPRECATED)
   Toggle on/off keeping the image maps. This is only really useful when paired with `saveMap()`.
 
 #### `setPasswords(pws)`
@@ -85,13 +108,19 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 #### `cliPasswordHandler()`
   Asks the user for missing passwords via the command line and a silent 'Enter password:' prompt.
 
+#### `setBufferMap(map)`
+  Use `map`, a map of name/Buffer pairs, for images and maps.<br />
+  Needed when using a Buffer for a map defined in an image table. Otherwise it's mainly for convenience.<br />
+  Example: `steg.clear().setBufferMap({ 'image.png': pngBuffer, 'image.map': mapBuffer }).inputImage({ name: 'image.png', map: 'image.map' })...`<br />
+  You can alternatively do `.inputImage({ name: 'image.png', buffer: pngBuffer, map: { name: 'image.map', buffer: mapBuffer } })` in the above example.
+
 ### Input/output
 
 #### `inputImage(path)`
-  The input image for both saving and loading.
+  The input image for both saving and loading. `path` is a _Path Object_. If a map is supplied, it's automatically loaded.
 
 #### `outputImage(path)`
-  The output image for saving.
+  The output image for saving. `path` is a _Path Object_. If a map is supplied, it's saved at the end.
 
 #### `async save()`
   Saves the image(s).
@@ -99,23 +128,27 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 #### `async load()`
   Parses the image(s) and returns a list of data sections (see _Classes_ section below).
 
-#### `loadMap(name, path)`
+#### `loadMap(name, path)` (DEPRECATED)
   Load `path` as the image map to use when saving/loading `name` rather than a default empty one. See `saveMap()` for more information.
 
-#### `async saveMap(name, path)`
+#### `async saveMap(name, path)` (DEPRECATED)
   Save `name`'s input map to `path`. `name` is the filename+frame prefix if applicable but without any path sections, example: the file `tests/orig.png`'s map would require `name` to be `orig.png`. The map is the list of pixels that have been used internally. This can allow you to save multiple entire `Steg` instances on the same image without risking overwriting any by simply re-saving/loading the map after every time.
 
 #### `async extractAll(secs = this.#secs, path = './extracted')`
   Extract all the sections in `secs` or, if null/undefined, extract all sections found, to the directory `path`.
 
-#### `async getLoadOpts(packed = false, enc = false)`
+#### `async getLoadOpts(packed = false, enc = false, salt = false, raw = false)`
   If `packed` is `false`, this returns the object representing the options required to load the current Steg instance (such as header mode, global seed, salt, etc).<br />
   If `packed` is `true`, it returns the object as a JSON string with byte 0 being a flag if it's encrypted.<br />
   If `enc` is also `true`, you'll be prompted for a password to use to encrypt via AES256 and a salt unique to this pair of functions.<br />
-  Does not currently honor `setSalt()`. Does not save passwords set by `setPasswords()`.
+  If `salt` is `true`, it uses the current salt provided by .setSalt(), if any. `raw` is ignored.<br />
+  If `raw` is `false`, then `salt` is a string that is hashed using SHA256.<br />
+  If `raw` is `true`, then `salt` is a hex-encoded 32-byte value that is directly used as the salt.<br />
+  Does NOT support generating a random salt, as the salt must be known.<br />
+  Does not save passwords set by `setPasswords()`.
 
-#### `async setLoadOpts(blob, packed = false, enc = false)`
-  Loads the appropriate settings defined in `blob` into this `Steg` instance so that all that must be supplied are any passwords required and the input path before `load()` can be used. `packed` and `enc` function the way they do with `getLoadOpts()`.
+#### `async setLoadOpts(blob, packed = false, enc = false, salt = false, raw = false)`
+  Loads the appropriate settings defined in `blob` into this `Steg` instance so that all that must be supplied are any passwords required and the input path before `load()` can be used. `packed`, `enc`, `salt`, and `raw` function the way they do with `getLoadOpts()`.
 
 ### Out-of-band
 
@@ -193,20 +226,22 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 #### `setImageTable(inputFiles, outputFiles)`
   This sets up a table of images you can jump around between with `moveCursor()`.<br />
   Both arguments are arrays and *must* be the same length.<br />
-  Naming rules from inputImage apply to both (so WEBP anim `frame|<n>|<path>` rules apply to `outputFiles()`).<br />
+  Both `inputFiles` and `outputFiles` are arrays of _Path Objects_.
   It is, however, currently unsupported to mix anim and non-anim WEBP, or mix frames.<br />
   Example:<br />
-    Each assuming `.inputImage('frame|0|in.webp').outputImage('frame|0|out.webp')`
-*    `.setImageTable([ 'frame|1|in.webp' ], [ 'frame|1|out.webp' ])`<br />
-      This is valid<br />
-*    `.setImageTable([ 'frame|4|in.webp' ], [ 'frame|1|out.webp' ])`<br />
-      This is unsupported
-*    `.setImageTable([ 'random.png' ], [ 'frame|1|out.webp' ])`<br />
-      This is also unsupported, as is using `random.webp`
-*    `.setImageTable([ 'frame|1|in.webp' ], [ 'random.webp' ])`<br />
-      This is also unsupported
-*    `.setImageTable([ 'frame|1|in.webp' ], [ 'frame|1|different.webp' ])`<br />
-      This is also unsupported<br />
+    Each assuming `.inputImage({ frame: 0, path: 'in.webp' }).outputImage({ frame: 0, path: 'out.webp' })`
+*    `.setImageTable([ { frame: 1, path: 'in.webp' } ], [ { frame: 1, path: 'out.webp' } ])`<br />
+      This is valid.<br />
+*    `.setImageTable([ { frame: 4, path: 'in.webp' } ], [ { frame: 1, path: 'out.webp' } ])`<br />
+      This is unsupported. Frame indexes cannot be mismatched.<br />
+*    `.setImageTable([ 'random.png' ], [ { frame: 1, path: 'out.webp' } ])`<br />
+      This is also unsupported, as is using `random.webp` for the left side. Cannot mix animated and non-animated.<br />
+*    `.setImageTable([ { frame: 1, path: 'in.webp' } ], [ 'random.webp' ])`<br />
+      This is also unsupported. Doesn't matter which side, they cannot be mixed.<br />
+*    `.setImageTable([ { frame: 2, path: 'in.webp' } ], [ { frame: 2, path: 'different.webp' } ])`<br />
+      This is also unsupported, if 'in.webp' is already mapped to another output name.<br />
+      In this case, it's trying to save frame 2 of 'in.webp' (which is already mapped to 'out.webp') to another file.<br />
+      This technically works, but will result in 'out.webp' being duplicated as 'different.webp', rather than the frame copied over.<br />
 
   The short version is that it only supports modifying frames in the same animation, not replacing or extracting them. See `node-webpmux` or the official `webpmux` tool if you need that (I'd recommend `node-webpmux` as I've got a more-complete toolset than `webpmux` does in it).
 
@@ -333,14 +368,18 @@ For packing:
     Set the global seed to the value of `[seed]` if provided, otherwise generate one to use.
 *  `-dryrun [comp]`<br />
     Set to dryrun mode. If `[comp]` is set, compress files/text blocks during the dry run.
-*  `-savemap <name> <path>`<br />
+*  `-savemap <name> <path>` (DEPRECATED)<br />
     Save `<name>`'s map to `<path>`.
-*  `-loadmap <name> <path>`<br />
+*  `-loadmap <name> <path>` (DEPRECATED)<br />
     Load `<name>`'s map from `<path>`.
-*  `-in <path>`<br />
-    Use `<path>` as the input image.
-*  `-out <path>`<br />
-    Use `<path>` as the output image.
+*  `-in <path> [frame] [map]`<br />
+    Use `<path>` as the input image.<br />
+    If `[frame]` is provided, use that frame of `<path>`.<br />
+    If `[map]` is provided, load and use `[map]` when loading `<path>`.
+*  `-out <path> [frame] [map]`<br />
+    Use `<path>` as the output image.<br />
+    If `[frame]` is provided, use that frame of `<path>`.<br />
+    If `[map]` is provided, save the map for `<path>` as `[map]`.
 *  `-cursor <x> <y>`<br />
     Set the initial cursor to `<x>`, `<y>`.
 *  `-getloadopts/-glo <path> [enc]`<br />
@@ -359,7 +398,8 @@ For packing:
 *  *   `rand [seed]`<br />
         Use the seed `[seed]` if provided, otherwise generate a new random seed to use.
 *  *   `imagetable <in1> <out1> [<in2> <out2> [...]]`<br />
-        Create an image table using the provided `<in>` `<out>` path pairs.
+        Create an image table using the provided `<in>` `<out>` pairs.<br />
+        Each `<in>` and `<out>` are in the format `[-frame <index>] [-map <map>] <path>`
 *  *   `rect <x> <y> <w> <h>`<br />
         Limit to the rect defined by x, y, w, h.
 *  *   `cursor <cmd> <args...>`<br />
@@ -426,7 +466,7 @@ For unpacking:
     Same as `-rand` of packing.
 *  `-cursor <x> <y>`<br />
     Same as `-cursor` of packing.
-*  `-loadmap <name> <path>`<br />
+*  `-loadmap <name> <path>` (DEPRECATED)<br />
     Load `<name>`'s map from `<path>`.
 *  `-salt <salt> [raw]`<br />
     Same as `-salt` of packing.
