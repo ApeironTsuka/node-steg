@@ -5,8 +5,6 @@ import fs from 'fs';
 import { StegFile, StegPartialFile, StegText } from '../stubs.mjs';
 
 let debug = false, channel = util.Channels.NORMAL;
-util.debug(debug);
-util.setChannel(channel);
 function parseCmdLine(args) {
   let state = {}, tester = /^-/;
   let test = (i, t, v) => {
@@ -26,6 +24,10 @@ function parseCmdLine(args) {
   if (state.pack) {
     for (let i = 1, l = args.length; i < l; i++) {
       switch (args[i]) {
+        case '-silent': channel = util.Channels.SILENT; break;
+        case '-v': channel = util.Channels.VERBOSE; break;
+        case '-vv': channel = util.Channels.VVERBOSE; break;
+        case '-debug': channel = util.Channels.DEBUG; debug = true; break;
         case '-version': case '-ver': test(i+1); state.version = args[++i]; break;
         case '-headmode': case '-hm': test(i+1); state.hm = args[++i]; break;
         case '-headmodemask': case '-hmm': test(i+1); state.hmm = args[++i]; break;
@@ -202,6 +204,10 @@ function parseCmdLine(args) {
   } else if (state.unpack) {
     for (let i = 1, l = args.length; i < l; i++) {
       switch (args[i]) {
+        case '-silent': channel = util.Channels.SILENT; break;
+        case '-v': channel = util.Channels.VERBOSE; break;
+        case '-vv': channel = util.Channels.VVERBOSE; break;
+        case '-debug': channel = util.Channels.DEBUG; debug = true; break;
         case '-headmode': case '-hm': test(i+1); state.hm = args[++i]; break;
         case '-headmodemask': case '-hmm': test(i+1); state.hmm = args[++i]; break;
         case '-image':
@@ -256,6 +262,7 @@ function parseModeMask(m) {
   return out;
 }
 function parseHonor(h) {
+  if (!h) { return 0; }
   let s = h.split('/'), o = 0;
   if ((s[0] == 'encrypt') || (s[1] == 'encrypt')) { o |= consts.TEXT_HONOR_ENCRYPTION; }
   if ((s[0] == 'compress') || (s[1] == 'compress')) { o |= consts.TEXT_HONOR_COMPRESSION; }
@@ -264,6 +271,8 @@ function parseHonor(h) {
 async function run() {
   let state = parseCmdLine(process.argv.slice(2));
   let major = consts.LATEST_MAJOR, minor = consts.LATEST_MINOR, bldr;
+  util.debug(debug);
+  util.setChannel(channel);
   if (state.pack) {
     if (state.version) { let v = state.version.split('.'); bldr = CreateBuilder(parseInt(v[0]), parseInt(v[1])); }
     else { bldr = CreateBuilder(); }

@@ -115,7 +115,7 @@ export class v1 extends Steg {
     if (headmodeMask != modeMask) { img.flush(); }
     this.master.modeMask = this.modeMask = modeMask;
     img.setModeMask(modeMask);
-    print(Channels.VERBOSE, 'Setting sec count...'+secs.length);
+    print(Channels.VERBOSE, `Setting sec count (${secs.length})...`);
     if (verMinor >= 2) { img.writeVLQ(secs.length, 4); }
     else { img.writeInt(secs.length, 9); }
     print(Channels.VERBOSE, 'Saving secs...');
@@ -188,7 +188,7 @@ export class v1 extends Steg {
     if (verMinor >= 2) { this.salt = salt; }
     print(Channels.VERBOSE, 'Reading mode...');
     mode = this.mode = img.readInt(6);
-    print(Channels.VVERBOSE, `Got mode (${mode})`);
+    print(Channels.VVERBOSE, `Got mode ${mode}`);
     if ((headmodeMask&0b111 == 0) && (mode&consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (global)'); }
     img.setMode(mode);
     print(Channels.VERBOSE, 'Reading settings...');
@@ -218,7 +218,7 @@ export class v1 extends Steg {
     print(Channels.VERBOSE, 'Reading sec count...');
     if (verMinor >= 2) { secCount = img.readVLQ(4); }
     else { secCount = img.readBits(9); }
-    print(Channels.VVERBOSE, `Got (${secCount})`);
+    print(Channels.VVERBOSE, `Got count ${secCount}`);
     for (let i = 0; i < secCount; i++) {
       ret = await this.#readSec();
       if (!ret.v) { throw new Error(`Unknown sec id ${ret.secId}`); }
@@ -747,7 +747,7 @@ export class v1 extends Steg {
     function err(id) { return { v: false, secId: id }; }
     print(Channels.VERBOSE, 'Reading sec id...');
     secId = img.readInt(9);
-    print(Channels.VVERBOSE, `Got ${secId}`);
+    print(Channels.VVERBOSE, `Got id ${secId}`);
     print(Channels.VERBOSE, 'Reading sec...');
     rem = secId&(1<<8);
     secId = secId&255;
@@ -774,10 +774,10 @@ export class v1 extends Steg {
     print(Channels.VERBOSE, 'Reading SEC_FILE...\nReading size...');
     if (this.verMinor >= 2) { o.size = img.readVLQ(8); }
     else { o.size = img.readInt(24); }
-    print(Channels.VVERBOSE, `Got ${o.size}`);
+    print(Channels.VVERBOSE, `Got size ${o.size}`);
     print(Channels.VERBOSE, 'Reading name...');
     o.name = img.readString();
-    print(Channels.VERBOSE, `Got ${o.name}`);
+    print(Channels.VERBOSE, `Got name '${o.name}'`);
     print(Channels.VERBOSE, 'Saving current state...');
     this.#saveState(o);
     print(Channels.VERBOSE, 'Reading past file...');
@@ -815,7 +815,7 @@ export class v1 extends Steg {
     print(Channels.VERBOSE, 'Reading SEC_RAND...\nReading seed...');
     seed = img.readInt(32);
     img.clear();
-    print(Channels.VVERBOSE, `Got ${seed}`);
+    print(Channels.VVERBOSE, `Got seed ${seed}`);
     if (!img.state.rand) { img.state.rand = new randr(); }
     img.state.rand.seed = seed;
   }
@@ -834,7 +834,7 @@ export class v1 extends Steg {
       case 1: n = img.readInt(16); break;
       case 2: default: n = img.readVLQ(4); break;
     }
-    print(Channels.VVERBOSE, `Got ${n}`);
+    print(Channels.VVERBOSE, `Got count ${n}`);
     print(Channels.VERBOSE, 'Reading file table...');
     for (let i = 0; i < n; i++) {
       if (this.verMinor < 3) {
@@ -884,7 +884,7 @@ export class v1 extends Steg {
       rect.h = img.readInt(16);
     }
     img.clear();
-    print(Channels.VVERBOSE, `Got ${rect.x}, ${rect.y}, ${rect.w}, ${rect.h}`);
+    print(Channels.VVERBOSE, `Got x, y, w, h of ${rect.x}, ${rect.y}, ${rect.w}, ${rect.h}`);
     img.state.rect = rect;
     img.resetCursor();
   }
@@ -893,7 +893,7 @@ export class v1 extends Steg {
     if (!cursorStack) { master.state.cursorStack = cursorStack = []; }
     print(Channels.VERBOSE, 'Reading SEC_CURSOR...\nReading command...');
     cmd = img.readInt(3);
-    print(Channels.VVERBOSE, `Got ${cmd}`);
+    print(Channels.VVERBOSE, `Got command ${cmd}`);
     switch (cmd) {
       case consts.CURSOR_CMD_PUSH: cursorStack.push([ this.imageIndex, img.cursor.x, img.cursor.y ]); break;
       case consts.CURSOR_CMD_POP:
@@ -913,11 +913,11 @@ export class v1 extends Steg {
           case 1: ind = img.readInt(16); break;
           case 2: default: ind = img.readVLQ(4); break;
         }
-        print(Channels.VVERBOSE, `Got ${ind}`);
+        print(Channels.VVERBOSE, `Got index ${ind}`);
         print(Channels.VERBOSE, 'Reading x, y...');
         if (this.verMinor >= 2) { x = img.readVLQ(8); y = img.readVLQ(8); }
         else { x = img.readInt(16); y = img.readInt(16); }
-        print(Channels.VVERBOSE, `Got ${x}, ${y}`);
+        print(Channels.VVERBOSE, `Got x, y of ${x}, ${y}`);
         img.clear();
         await this.#switchImage(ind);
         img = this.img;
@@ -938,7 +938,7 @@ export class v1 extends Steg {
           case 1: ind = img.readInt(16); break;
           case 2: default: ind = img.readVLQ(4); break;
         }
-        print(Channels.VVERBOSE, `Got ${ind}`);
+        print(Channels.VVERBOSE, `Got index ${ind}`);
         await this.#switchImage(ind);
         this.img.resetCursor();
         break;
@@ -950,20 +950,20 @@ export class v1 extends Steg {
     if (rem) { print(Channels.VERBOSE, 'Clearing SEC_COMPRESSION...'); delete master.state.compress; return; }
     print(Channels.VERBOSE, 'Reading SEC_COMPRESSION...\nReading type...');
     com.type = img.readInt(4);
-    print(Channels.VVERBOSE, `Got ${com.type}`);
+    print(Channels.VVERBOSE, `Got type ${com.type}`);
     switch (com.type) {
       case consts.COMP_GZIP:
         print(Channels.VERBOSE, 'Reading level...');
         com.level = img.readInt(4);
-        print(Channels.VVERBOSE, `Got ${com.level}`);
+        print(Channels.VVERBOSE, `Got level ${com.level}`);
         break;
       case consts.COMP_BROTLI:
         print(Channels.VERBOSE, 'Reading level...');
         com.level = img.readInt(4);
-        print(Channels.VVERBOSE, `Got ${com.level}`);
+        print(Channels.VVERBOSE, `Got level ${com.level}`);
         print(Channels.VERBOSE, 'Reading text flag...');
         com.text = img.readInt(1);
-        print(Channels.VVERBOSE, `Got ${com.text}`);
+        print(Channels.VVERBOSE, `Got flag ${com.text}`);
         break;
       default: print(Channels.VERBOSE, 'Unknown compression type specified, doing nothing...'); return;
     }
@@ -974,7 +974,7 @@ export class v1 extends Steg {
     if (rem) { print(Channels.VERBOSE, 'Clearing SEC_ENCRYPTION...'); delete master.state.encrypt; return; }
     print(Channels.VERBOSE, 'Reading SEC_ENCRYPTION...\nReading type...');
     enc.type = img.readInt(4);
-    print(Channels.VVERBOSE, `Got ${enc.type}`);
+    print(Channels.VVERBOSE, `Got type ${enc.type}`);
     switch (enc.type) {
       case consts.CRYPT_CAMELLIA256:
       case consts.CRYPT_ARIA256:
@@ -995,7 +995,7 @@ export class v1 extends Steg {
     enc.iv = new Buffer.alloc(16);
     print(Channels.VERBOSE, 'Reading IV...');
     for (let i = 0; i < 16; i++) { enc.iv[i] = img.readInt(8); }
-    print(Channels.VVERBOSE, `Got ${enc.iv.toString('hex')}`);
+    print(Channels.VVERBOSE, `Got IV ${enc.iv.toString('hex')}`);
     master.state.encrypt = enc;
   }
   async #readSecPartialFile(rem) {
@@ -1004,13 +1004,13 @@ export class v1 extends Steg {
     print(Channels.VERBOSE, 'Reading SEC_PARTIALFILE...\nReading file size...');
     if (this.verMinor >= 2) { f.size = img.readVLQ(8); }
     else { f.size = img.readInt(24); }
-    print(Channels.VVERBOSE, `Got ${f.size}`);
+    print(Channels.VVERBOSE, `Got size ${f.size}`);
     print(Channels.VERBOSE, 'Reading file name...');
     f.name = img.readString();
     print(Channels.VERBOSE, `Got ${f.name}\nReading file index...`);
     if (this.verMinor >= 2) { table[binToDec(v)] = img.readVLQ(4); }
     else { table[binToDec(v)] = img.readInt(8); }
-    print(Channels.VVERBOSE, `Got ${table[binToDec(v)]}`);
+    print(Channels.VVERBOSE, `Got index ${table[binToDec(v)]}`);
     f.com = master.state.compress;
     f.enc = master.state.encrypt;
   }
@@ -1019,20 +1019,20 @@ export class v1 extends Steg {
     print(Channels.VERBOSE, 'Reading SEC_PARTIALFILEPIECE...\nReading file index...');
     if (this.verMinor >= 2) { f = img.readVLQ(4); }
     else { f = img.readInt(8); }
-    print(Channels.VVERBOSE, `Got ${f}`);
+    print(Channels.VVERBOSE, `Got index ${f}`);
     f = table[f];
     if (!f.pieces) { f.pieces = []; }
     print(Channels.VERBOSE, 'Reading piece index...');
     if (this.verMinor >= 2) { o.ind = img.readVLQ(4); }
     else { o.ind = img.readInt(8); }
-    print(Channels.VVERBOSE, `Got ${o.ind}`);
+    print(Channels.VVERBOSE, `Got index ${o.ind}`);
     print(Channels.VERBOSE, 'Reading last piece flag...');
     o.last = !!img.readInt(1);
     print(Channels.VVERBOSE, `Got ${v}`);
     print(Channels.VERBOSE, 'Reading piece size...');
     if (this.verMinor >= 2) { o.size = img.readVLQ(8); }
     else { o.size = img.readInt(24); }
-    print(Channels.VERBOSE, `Got ${o.size}`);
+    print(Channels.VERBOSE, `Got size ${o.size}`);
     print(Channels.VERBOSE, 'Saving state...');
     this.#saveState(o);
     o.enc = f.enc;
@@ -1088,7 +1088,7 @@ export class v1 extends Steg {
     if ((modeMask&0b111 == 0) && (mode&consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (sec)'); }
     img.setMode(master.state.mode = mode);
     img.clear();
-    print(Channels.VVERBOSE, `Got ${master.state.mode}`);
+    print(Channels.VVERBOSE, `Got mode ${master.state.mode}`);
   }
   async #readSecAlpha(rem) {
     let { img } = this, v;
@@ -1099,17 +1099,17 @@ export class v1 extends Steg {
     }
     print(Channels.VERBOSE, 'Reading SEC_ALPHA...\nReading threshhold...');
     v = img.readBits(3); img.alphaThresh = bitsToAlpha(v);
-    print(Channels.VVERBOSE, `Got ${v} (${img.alphaThresh})`);
+    print(Channels.VVERBOSE, `Got threshhold ${v} (${img.alphaThresh})`);
   }
   async #readSecText(rem) {
     let { img, master } = this, o = {}, s = 0;
     print(Channels.VERBOSE, 'Reading SEC_TEXT...\nReading honor mask...');
     o.mask = img.readInt(4);
-    print(Channels.VVERBOSE, `Got ${o.mask}`);
+    print(Channels.VVERBOSE, `Got mask ${o.mask}`);
     print(Channels.VERBOSE, 'Reading length...');
     if (this.verMinor >= 2) { o.len = img.readVLQ(8); }
     else { o.len = img.readInt(16); }
-    print(Channels.VVERBOSE, `Got ${o.len}`);
+    print(Channels.VVERBOSE, `Got length ${o.len}`);
     print(Channels.VERBOSE, 'Saving state...');
     this.#saveState(o);
     print(Channels.VERBOSE, 'Reading past text...');
@@ -1150,7 +1150,7 @@ export class v1 extends Steg {
     if ((mask&0b111 == 0) && (m&consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (sec)'); }
     img.setModeMask(master.state.modeMask = mask);
     img.clear();
-    print(Channels.VVERBOSE, `Got ${v} (${master.state.modeMask})`);
+    print(Channels.VVERBOSE, `Got mask ${v} (${master.state.modeMask})`);
   }
 }
 class v1File extends StegFile {

@@ -346,7 +346,15 @@ In `bin/` is `steg.mjs`. This is a somewhat simple CLI tool for packing/unpackin
 
 For packing:
 *  `-pack` (must be first argument)<br />
-    Set to packing mode
+    Set to packing mode.
+*  `-silent`<br />
+    Suppress all status and result output.
+*  `-v`<br />
+    Set to VERBOSE output. Outputs extra status messages.
+*  `-vv`<br />
+    Set to VVERBOSE output. Currently identical to `-v` as packing outputs nothing to the VVERBOSE channel.
+*  `-debug`<br />
+    Set to DEBUG output with debug mode enabled. Outputs everything `-vv` does, as well as every pixel modified.
 *  `-version/-ver <version>`<br />
     Set the version wanted in the format `<major>.<minor>` like 1.2.
 *  `-headmode/-hm <mode>`<br />
@@ -456,6 +464,14 @@ For packing:
 For unpacking:
 *  `-unpack` (must be the first argument)<br />
     Set to unpacking mode.
+*  `-silent`<br />
+    Suppress all status and result output.
+*  `-v`<br />
+    Set to VERBOSE output. Outputs extra status messages.
+*  `-vv`<br />
+    Set to VVERBOSE output. Outputs everything `-v` does as well as what values were read.
+*  `-debug`<br />
+    Set to DEBUG output with debug mode enabled. Outputs everything `-vv` does, as well as the values of every pixel read.
 *  `-headmode/-hm <mode>`<br />
     Same as `-headmode` of packing.
 *  `-headmodemask/-hmm <mask>`<br />
