@@ -211,8 +211,8 @@ export class Image {
     };
     if (actions.length == 0) { buf += data; }
     else if (lasta != -1) {
-      if (actions[lasta][0] == WRITE) { actions.push([1, data]); lasta++; }
-      else { actions.push([1, data]); lasta++; }
+      if (actions[lasta][0] == WRITE) { actions[lasta][1] += data; }
+      else { actions.push([WRITE, data]); lasta++; }
     }
     
     while (true) {
