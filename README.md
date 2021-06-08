@@ -267,7 +267,9 @@ The term "out-of-band" is used to describe information that's needed but *not* s
   Currently supported algorithms:<br />
 *  `CRYPT_AES256` (AES-256-CBC).
 *  `CRYPT_CAMELLIA256` (CAMELLIA-256-CBC).
- * `CRYPT_ARIA256` (ARIA-256-CBC).
+*  `CRYPT_ARIA256` (ARIA-256-CBC).
+*  `CRYPT_CHACHA20` (ChaCha20).
+*  `CRYPT_BLOWFISH` (BF-CBC).
 
 #### `clearEncryption()`
   Clear an active `setEncryption()`.
@@ -427,6 +429,8 @@ For packing:
           `aes256`: Use AES 256.<br />
           `camellia256`: Use CAMELLIA 256.<br />
           `aria256`: Use ARIA 256.<br />
+          `chacha20`: Use ChaCha20.<br />
+          `blowfish`: Use Blowfish.<br />
 *  *   `partialfile <path> <index> [name] [comp]`<br />
         Define a file at `<path>` that is to be saved in discreet chunks. `<index>` is an arbitrary integer to use to refer to it in `partialfilepiece` blocks. If `[name]` is defined, use `[name]` as the filename rather than the base filename. If `[comp]` is provided, consider the file already compressed.
 *  *   `partialfilepiece <index> <size> [final]`<br />
