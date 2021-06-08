@@ -101,6 +101,10 @@ export function cryptcamellia256(key, iv) { return createCipheriv('camellia-256-
 export function decryptcamellia256(key, iv) { return createDecipheriv('camellia-256-cbc', key, iv); }
 export function cryptaria256(key, iv) { return createCipheriv('aria-256-cbc', key, iv); }
 export function decryptaria256(key, iv) { return createDecipheriv('aria-256-cbc', key, iv); }
+export function cryptchacha20(key, iv) { return createCipheriv('chacha20', key, iv); }
+export function decryptchacha20(key, iv) { return createDecipheriv('chacha20', key, iv); }
+export function cryptblowfish(key, iv) { return createCipheriv('bf-cbc', key, iv); }
+export function decryptblowfish(key, iv) { return createDecipheriv('bf-cbc', key, iv); }
 export async function packString(s, pw, salt) {
   let fmods = [ ], bufs = [], b, st;
   if (pw) {

@@ -25,6 +25,7 @@ CHANGELOG:
     changed format of SEC_IMAGETABLE entirely
       no longer uses 'frame|n|name' syntax for webp animations
       supports loading maps
+    added CHACHA20 and BLOWFISH support to SEC_ENCRYPTION
 
 read(): read amount of data honoring any settings/arguments. Any overread is cached for the next read(s)
 vlq(): read a uint using the given chunk size. Any overread is cached for the next read(s)
@@ -34,7 +35,7 @@ Header part 1 (header mode and mode mask affect these):
   read(12bit): version
   read(6bit): mode
 Header part 2 (global mode affects these, header mode mask affects settings but not section count):
-  read(14bit): settings
+  read(6bit): settings
   vlq(4): section count (max 511)
 Data (global mode and mode mask affect these, unless a SEC_MODE and/or SEC_MODEMASK is in effect instead):
   loop over sections:

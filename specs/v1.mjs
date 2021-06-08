@@ -13,6 +13,8 @@ import { pad, randr,
          cryptaes256, decryptaes256,
          cryptcamellia256, decryptcamellia256,
          cryptaria256, decryptaria256,
+         cryptchacha20, decryptchacha20,
+         cryptblowfish, decryptblowfish,
          packString, unpackString,
          copyf, convertSalt,
          print, Channels, debug
@@ -307,6 +309,10 @@ export class v1 extends Steg {
       let enc = master.state.encrypt;
       switch (enc.type) {
         case consts.CRYPT_AES256: fmods.push(cryptaes256(enc.key, enc.iv)); break;
+        case consts.CRYPT_CAMELLIA256: fmods.push(cryptcamellia256(enc.key, enc.iv)); break;
+        case consts.CRYPT_ARIA256: fmods.push(cryptaria256(enc.key, enc.iv)); break;
+        case consts.CRYPT_CHACHA20: fmods.push(cryptchacha20(enc.key, enc.iv)); break;
+        case consts.CRYPT_BLOWFISH: fmods.push(cryptblowfish(enc.key, enc.iv)); break;
         default: print(Channels.VERBOSE, 'Unknown or no encryption type chosen, ignoring...'); break;
       }
     }
@@ -319,6 +325,10 @@ export class v1 extends Steg {
       let enc = master.state.encrypt;
       switch (enc.type) {
         case consts.CRYPT_AES256: fmods.push(decryptaes256(enc.key, enc.iv)); break;
+        case consts.CRYPT_CAMELLIA256: fmods.push(decryptcamellia256(enc.key, enc.iv)); break;
+        case consts.CRYPT_ARIA256: fmods.push(decryptaria256(enc.key, enc.iv)); break;
+        case consts.CRYPT_CHACHA20: fmods.push(decryptchacha20(enc.key, enc.iv)); break;
+        case consts.CRYPT_BLOWFISH: fmods.push(decryptblowfish(enc.key, enc.iv)); break;
         default: print(Channels.VERBOSE, 'Unknown encryption type specified, doing nothing...'); break;
       }
     }
@@ -605,6 +615,10 @@ export class v1 extends Steg {
       case consts.CRYPT_CAMELLIA256:
       case consts.CRYPT_ARIA256:
         if (this.verMinor < 2) { img.writeInt(consts.CRYPT_NONE, 4); return; }
+        break;
+      case consts.CRYPT_CHACHA20:
+      case consts.CRYPT_BLOWFISH:
+        if (this.verMinor < 3) { img.writeInt(consts.CRYPT_NONE, 4); return; }
         break;
       case consts.CRYPT_AES256: break;
     }
@@ -980,6 +994,10 @@ export class v1 extends Steg {
       case consts.CRYPT_ARIA256:
         if (this.verMinor < 2) { throw new Error('SEC_ENCRYPTION found using CAMELLIA256 or ARIA256 in a version < 1.2; This is not valid and may be a sign of a corrupt or invalid image. Aborting.'); }
         break;
+      case consts.CRYPT_CHACHA20:
+      case consts.CRYPT_BLOWFISH:
+        if (this.verMinor < 3) { throw new Error('SEC_ENCRYPTION found using CHACHA20 or BLOWFISH in a version < 1.3; This is not valid and may be a sign of a corrupt or invalid image. Aborting.'); }
+        break;
       case consts.CRYPT_AES256: break;
       default: print(Channels.VERBOSE, 'Unknown encryption type specified, doing nothing...'); return;
     }
@@ -1313,6 +1331,8 @@ export class Builder extends _Builder {
       case consts.CRYPT_AES256:
       case consts.CRYPT_CAMELLIA256:
       case consts.CRYPT_ARIA256:
+      case consts.CRYPT_CHACHA20:
+      case consts.CRYPT_BLOWFISH:
         break;
       default: throw new Error(`Unknown encryption type ${type}`);
     }

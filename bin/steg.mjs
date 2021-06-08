@@ -328,6 +328,8 @@ async function run() {
                 case 'aes256': bldr.setEncryption(consts.CRYPT_AES256); break;
                 case 'camellia256': bldr.setEncryption(consts.CRYPT_CAMELLIA256); break;
                 case 'aria256': bldr.setEncryption(consts.CRYPT_ARIA256); break;
+                case 'chacha20': bldr.setEncryption(consts.CRYPT_CHACHA20); break;
+                case 'blowfish': bldr.setEncryption(consts.CRYPT_BLOWFISH); break;
                 default: throw new Error(`Unknown encryption type ${sec.type}`); break;
               }
             }
