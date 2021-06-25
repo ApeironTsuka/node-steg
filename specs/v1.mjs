@@ -125,7 +125,6 @@ export class v1 extends Steg {
     for (let i = 0, l = secs.length; i < l; i++) {
       if (!await this.#packSec(secs[i])) { throw new Error(`Unknown sec id ${sec.id}`); }
     }
-    img.flush();
     let ret = await this.#saveImages(input.out);
     print(Channels.NORMAL, `Number of pixels changed in ${input.out.path||input.out.name||input.out}: ${img.used.count} of ${img.width*img.height} (${Math.floor(img.used.count/(img.width*img.height)*10000)/100}%)`);
     if (!input.keep) { // remove for 1.4.0
@@ -254,42 +253,30 @@ export class v1 extends Steg {
   }
   async #saveImages(o) {
     let out = [], outmap = {}, img, t;
-    if (!this.dryrun) {
-      let { path, map: mapOut, buffer, name, frame } = o;
-      await this.master.save(typeof o === 'string' ? { path: o } : { img: this.master, path, mapOut, buffer, name, frame });
-      if (typeof o === 'string') { out.push({ path: o, img: this.master }); }
-      else {
-        let mapPath, mapName, mapBuffer;
-        if (mapOut) {
-          mapPath = typeof mapOut == 'string' ? mapOut : mapOut.path;
-          mapName = mapOut.name;
-          mapBuffer = mapOut.buffer ? this.master.mapBuffer : undefined;
+    let f = async ({ path, map: _map, mapOut, buffer, name, frame }, img, o = undefined) => {
+      let map = mapOut || _map, mapPath, mapName, mapBuffer;
+      let s = typeof o === 'string' ? { path: o } : { img, path, mapOut: map, buffer, name, frame };
+      img.flush();
+      await img.save(s);
+      if (typeof o === 'string') { out.push({ path: o, img }); }
+      else if (!outmap[path || name || o]) {
+        if (map) {
+          mapPath = typeof map == 'string' ? map : map.path;
+          mapName = map.name;
+          mapBuffer = map.buffer ? img.mapBuffer : undefined;
         }
-        out.push({ path, map: { path: mapPath, name: mapName, buffer: mapBuffer }, buffer: this.master.buffer, name, frame });
+        out.push({ path, map: { path: mapPath, name: mapName, buffer: mapBuffer }, buffer: img.buffer, name, frame });
+        outmap[path || name || o] = true;
       }
-      outmap[path||name||o] = true;
-    }
+    };
+    if (!this.dryrun) { await f(o, this.master, o); }
     for (let i = 0, { fullTable } = this, keys = Object.keys(fullTable), l = keys.length; i < l; i++) {
       t = fullTable[keys[i]];
       img = t.img;
       if (!img.loaded) { continue; }
       if (img.master == img) { if (t.mapOut) { img.saveMap(typeof t.mapOut == 'string' ? { path: t.mapOut } : t.mapOut); } continue; }
-      img.flush();
-      if (!this.dryrun) {
-        await img.save(t);
-        let { path, mapOut: map, buffer, name, frame } = t;
-        if (!outmap[path||name]) {
-          let mapPath, mapName, mapBuffer;
-          if (map) {
-            mapPath = typeof map == 'string' ? map : map.path;
-            mapName = map.name;
-            mapBuffer = map.buffer ? t.img.mapBuffer : undefined;
-          }
-          out.push({ path, map: { path: mapPath, name: mapName, buffer: mapBuffer }, buffer: t.img.buffer, name, frame });
-          outmap[path||name] = true;
-        }
-      }
-      print(Channels.NORMAL, `Number of pixels changed in ${t.name}: ${img.used.count} of ${img.width*img.height} (${Math.floor(img.used.count/(img.width*img.height)*10000)/100}%)`);
+      if (!this.dryrun) { await f(t, img); }
+      print(Channels.NORMAL, `Number of pixels changed in ${t.name}: ${img.used.count} of ${img.width * img.height} (${Math.floor(img.used.count / (img.width * img.height) * 10000) / 100}%)`);
     }
     return out;
   }

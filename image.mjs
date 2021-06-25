@@ -81,9 +81,9 @@ export class Image {
   async save(o) {
     let { path, buffer, mapOut: map } = o, buf;
     switch (this.type) {
-      case consts.IMGTYPE_PNG: buf = await this.#savePNG(path || buffer); break;
+      case consts.IMGTYPE_PNG: buf = await this.#savePNG(path); break;
       case consts.IMGTYPE_WEBP:
-      case consts.IMGTYPE_WEBPANIM: buf = await this.#saveWEBP(path || buffer); break;
+      case consts.IMGTYPE_WEBPANIM: buf = await this.#saveWEBP(path); break;
     }
     if (buf) { this.buffer = buf; }
     if (map) { this.saveMap(typeof map == 'string' ? { path: map } : map); }
@@ -359,17 +359,13 @@ export class Image {
     switch (this.type) {
       case consts.IMGTYPE_WEBP:
         await this.webp.setImageData(this.img.data, { width: this.img.width, height: this.img.height, lossless: 9, exact: true });
-        if (this.isBuffer) { return await this.webp.saveBuffer(); }
-        else { await this.webp.save(p); }
         break;
       case consts.IMGTYPE_WEBPANIM:
         await this.webp.setFrameData(this.frame, this.img.data, { width: this.img.width, height: this.img.height, lossless: 9, exact: true });
-        if (p) {
-          if (this.isBuffer) { return await this.webp.saveBuffer(); }
-          else { await this.webp.save(p); }
-        }
         break;
     }
+    if (this.isBuffer) { return await this.webp.saveBuffer(); }
+    else { await this.webp.save(p); }
   }
 }
 

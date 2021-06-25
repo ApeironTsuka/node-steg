@@ -38,8 +38,8 @@ for (let i = 0, { argv } = process, l = argv.length; i < l; i++) {
     case '-s': channel = util.Channels.SILENT; break;
     case '-v': channel = util.Channels.VERBOSE; break;
     case '-vv': channel = util.Channels.VVERBOSE; break;
-    case '-clean': cleanPNG(argv[++i], argv[++i]); break;
-    case '-noise': noisyPNG(argv[++i], argv[++i]); break;
+    case '-clean': cleanPNG(argv[++i], argv[++i]); process.exit(); break;
+    case '-noise': noisyPNG(argv[++i], argv[++i]); process.exit(); break;
     case '-h':
       console.log('USAGE: test.mjs [-d] [-s] [-v[v]] [-clean <in> <out>] [-noise <in> <out>] [-h]');
       console.log('-d: Turn on debugging output');
