@@ -32,10 +32,8 @@ export class Image {
       else if (/\.webp$/i.test(name)) { type = 'webp'; }
       else { throw new Error(`Unknown image ext for "${name}"`); }
     } else { throw new Error('Must provide either `path` or `name`'); }
-    if (type == 'png') {
-      if (path) { await this.#loadPNG(path); }
-      else if (buffer) { await this.#loadPNGBuffer(buffer, name); }
-    } else {
+    if (type == 'png') { await this.#loadPNG(path ? path : buffer); }
+    else {
       let webp;
       if (frame != -1) { this.frame = frame; }
       if (path) {
@@ -43,7 +41,7 @@ export class Image {
         if (Image.map[bn]) { webp = Image.map[bn]; path = webp.path; }
         else { webp = Image.map[bn] = await this.#loadWEBP(path); }
       }
-      else if (buffer) { webp = await this.#loadWEBPBuffer(buffer, name); }
+      else if (buffer) { webp = await this.#loadWEBP(buffer); }
       await this.#loadWEBPData(webp, frame);
       this.webp = webp;
     }
@@ -319,10 +317,10 @@ export class Image {
   static checkMode(m, c) { return (m&7)==c; }
   static resetMap() { delete Image.map; Image.map = {}; }
 
-  async #loadPNG(p) { this.#loadPNGBuffer(fs.readFileSync(p)); }
-  async #loadPNGBuffer(buffer) {
-    let img = PNG.sync.read(buffer);
-    this.img = img;
+  async #loadPNG(d) {
+    let img = d;
+    if (typeof d === 'string') { img = fs.readFileSync(d); }
+    this.img = PNG.sync.read(img);
     this.type = consts.IMGTYPE_PNG;
   }
   async #savePNG(p) {
@@ -334,11 +332,6 @@ export class Image {
   async #loadWEBP(p) {
     let webp = new WebP.Image();
     await webp.load(p);
-    return webp;
-  }
-  async #loadWEBPBuffer(buffer) {
-    let webp = new WebP.Image();
-    await webp.loadBuffer(buffer);
     return webp;
   }
   async #loadWEBPData(webp, frame = -1) {
@@ -364,7 +357,7 @@ export class Image {
         await this.webp.setFrameData(this.frame, this.img.data, { width: this.img.width, height: this.img.height, lossless: 9, exact: true });
         break;
     }
-    if (this.isBuffer) { return await this.webp.saveBuffer(); }
+    if (this.isBuffer) { return await this.webp.save(null); }
     else { await this.webp.save(p); }
   }
 }
