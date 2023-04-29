@@ -7,16 +7,28 @@ export class Steg {
 export class StegFile {
   get name() { throw new Error(`Unimplemented func ::name`); }
   get size() { throw new Error(`Unimplemented func ::size`); }
+  get realSize() { throw new Error(`Unimplemented func ::realSize`); }
   get state() { throw new Error(`Unimplemented func ::state`); }
+  get compressed() { throw new Error(`Unimplemented func ::compressed`); }
+  get encrypted() { throw new Error(`Unimplemented func ::encrypted`); }
   async extract(path = './extracted') { throw new Error(`Unimplemented func ::extract`); }
 }
 export class StegPartialFile extends StegFile {
   get name() { throw new Error(`Unimplemented func ::name`); }
   get size() { throw new Error(`Unimplemented func ::size`); }
+  get realSize() { throw new Error(`Unimplemented func ::realSize`); }
   get state() { throw new Error(`Unimplemented func ::state`); }
+  get compressed() { throw new Error(`Unimplemented func ::compressed`); }
+  get encrypted() { throw new Error(`Unimplemented func ::encrypted`); }
+  get count() { throw new Error(`Unimplemented func ::count`); }
   async extract(path = './extracted') { throw new Error(`Unimplemented func ::extract`); }
 }
 export class StegText {
+  get size() { throw new Error(`Unimplemented func ::size`); }
+  get realSize() { throw new Error(`Unimplemented func ::realSize`); }
+  get state() { throw new Error(`Unimplemented func ::state`); }
+  get compressed() { throw new Error(`Unimplemented func ::compressed`); }
+  get encrypted() { throw new Error(`Unimplemented func ::encrypted`); }
   async extract() { throw new Error(`Unimplemented func ::extract`); }
 }
 

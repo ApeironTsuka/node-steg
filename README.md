@@ -8,7 +8,7 @@ You can also import `util` if you want to control how verbose it is for debuggin
 Now, lets create a builder. <br />
 `let steg = CreateBuilder();` <br />
 The arguments are `CreateBuilder([major version, [minor version]])`, if you want to use a specific version. <br />
-At the time of writing, the default is v1.2.
+At the time of writing, the default is v1.4.
 
 For just packing a file in and calling it a day,
 
@@ -38,13 +38,13 @@ For what I hope are obvious reasons, lossy formats can't work.
 For animated WEBP images, the syntax is mostly the same. However, when both supplying paths for saving and loading (except for one exception below) you must provide them in the format `{ frame: <frame number, starting at 0>, path: <path> }`.
 ```javascript
 steg.clear()
-    .inputImage({ frame: 0, path: 'animated.webp')
+    .inputImage({ frame: 0, path: 'animated.webp' })
     .outputImage('out.webp') // This is the one exception where you don't need the special format
     // do things as normal
     .save();
 
 steg.clear()
-    .inputImage({ frame: 0, path: 'out.webp')
+    .inputImage({ frame: 0, path: 'out.webp' })
     // etc
     .load()
     // etc
@@ -83,8 +83,8 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 {
   path: <path>, // if you're loading a file
   buffer: <Buffer object>, // if you're loading a Buffer
-  buffer: true, // if you're saving to a Buffer
-  name: <file name> // if using a Buffer, it needs to know what name to refer to it as
+  name: <file name> // if you're loading a Buffer from a buffer map via .setBufferMap
+  buffer: true // if you're saving to a Buffer
 }
 ```
 
@@ -93,13 +93,10 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 
 #### `dryrun(comp = false)`
   Switches to doing a dry run of the saving process. Everything is supported, but the `save()` call doesn't do the final saving. This does *not* create or modify any files. Any compression it would do is skipped and the full size is used instead. <br />
-  Set `comp` to `true` to enable compression. This *does* create temporary files and runs files through compression (where applicable) as it would during the normal saving process.
+  Set `comp` to `true` to enable compression. This *does* create temporary files unless useTempBuffers() is called and runs files through compression (where applicable) as it would during the normal saving process.
 
 #### `realrun()`
   Switches to doing a real run. This way, if a dry run succeeds, you can call this and do a proper run.
-
-#### `keep(s = true)` (DEPRECATED)
-  Toggle on/off keeping the image maps. This is only really useful when paired with `saveMap()`.
 
 #### `setPasswords(pws)`
   This is an out-of-band setting. <br />
@@ -128,18 +125,14 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 #### `async load()`
   Parses the image(s) and returns a list of data sections (see _Classes_ section below).
 
-#### `loadMap(name, path)` (DEPRECATED)
-  Load `path` as the image map to use when saving/loading `name` rather than a default empty one. See `saveMap()` for more information.
-
-#### `async saveMap(name, path)` (DEPRECATED)
-  Save `name`'s input map to `path`. `name` is the filename+frame prefix if applicable but without any path sections, example: the file `tests/orig.png`'s map would require `name` to be `orig.png`. The map is the list of pixels that have been used internally. This can allow you to save multiple entire `Steg` instances on the same image without risking overwriting any by simply re-saving/loading the map after every time.
-
 #### `async extractAll(secs = this.#secs, path = './extracted')`
-  Extract all the sections in `secs` or, if null/undefined, extract all sections found, to the directory `path`.
+  Extract all the sections in `secs` or, if null/undefined, extract all sections found, to the directory `path`.<br />
+  If `path` is a string, this function will return an array with, in order, the contents of each text section.<br />
+  If `path` is `null`, this function will return an array with, in order, the contents of each file and text section.
 
 #### `async getLoadOpts(packed = false, enc = false, salt = false, raw = false)`
   If `packed` is `false`, this returns the object representing the options required to load the current Steg instance (such as header mode, global seed, salt, etc).<br />
-  If `packed` is `true`, it returns the object as a JSON string with byte 0 being a flag if it's encrypted.<br />
+  If `packed` is `true`, it returns the object as a JSON string with byte 0 being a flag for if it's encrypted.<br />
   If `enc` is also `true`, you'll be prompted for a password to use to encrypt via AES256 and a salt unique to this pair of functions.<br />
   If `salt` is `true`, it uses the current salt provided by .setSalt(), if any. `raw` is ignored.<br />
   If `raw` is `false`, then `salt` is a string that is hashed using SHA256.<br />
@@ -149,6 +142,9 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 
 #### `async setLoadOpts(blob, packed = false, enc = false, salt = false, raw = false)`
   Loads the appropriate settings defined in `blob` into this `Steg` instance so that all that must be supplied are any passwords required and the input path before `load()` can be used. `packed`, `enc`, `salt`, and `raw` function the way they do with `getLoadOpts()`.
+
+### `useTempBuffers()`
+  Use Buffers instead of temp files when handling encrypted/compressed files.
 
 ### Out-of-band
 
@@ -160,6 +156,10 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 
 #### `setGlobalSeed(seed)`
   This uses `seed` to randomly distribute the header and data around the image. It defaults to disabled.<br />
+  `seed` is an arbitrary-length string consisting of a-z, A-Z, 0-9, and spaces.
+
+#### `setGlobalShuffleSeed(seed)`
+  This uses `seed` to randomly shuffle any data written to the image. It defaults to disabled.<br />
   `seed` is an arbitrary-length string consisting of a-z, A-Z, 0-9, and spaces.
 
 #### `setInitialCursor(x, y)`
@@ -177,7 +177,7 @@ The term "out-of-band" is used to describe information that's needed but *not* s
   This sets the mode used to store the second half of the header, as well as the rest of the data in general. It defaults to `MODE_A3BPP | MODE_3BPP`.
 
 #### `setGlobalModeMask(mask)`
-  This changes which channels are used to store the second half of the header, as well as the rest of the data in genereal. It defaults to `MODEMASK_RGB`.
+  This changes which channels are used to store the second half of the header, as well as the rest of the data in general. It defaults to `MODEMASK_RGB`.
 
 #### `setGlobalAlphaBounds(bounds)`
   This changes what alpha value is considered alpha vs non-alpha. It supports 8 steps, each roughly 36 apart. Defaults to `ALPHA_255`.
@@ -213,6 +213,12 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 
 #### `clearSeed()`
   Reset the seed back to the global seed. If there was no global seed, this disables the randomness.
+
+#### `setShuffleSeed(seed)`
+  Override the global shuffle seed until another `setShuffleSeed()` is called or is cleared.
+
+#### `clearShuffleSeed()`
+  Reset the seed back to the global shuffle seed. If there was no global shuffle seed, this disables shuffling.
 
 #### `pushCursor()`/`popCursor()`
   Save/load the image index and x, y position of the cursor.
@@ -262,23 +268,35 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 #### `clearCompression()`
   Clear an active `setCompression()`.
 
-#### `setEncryption(type, pw)`
+#### `setEncryption(type, pw = undefined, kdf = KDF_ARGON2ID, { adv = false, memoryCost = 65536, timeCost = 50, parallelism = 8, iterations = 1000000 } = {})`
   Set the active encryption algorithm to run files/text through.<br />
-  Currently supported algorithms:<br />
+  Currently supported algorithms for `type`:<br />
 *  `CRYPT_AES256` (AES-256-CBC).
 *  `CRYPT_CAMELLIA256` (CAMELLIA-256-CBC).
 *  `CRYPT_ARIA256` (ARIA-256-CBC).
 *  `CRYPT_CHACHA20` (ChaCha20).
 *  `CRYPT_BLOWFISH` (BF-CBC).
+  `kdf` sets which KDF (Key Derivative Function) to use.<br />
+  Currently supported KDFs are:<br />
+*  `KDF_PBKDF2`
+  The old default. Does 1000000 iterations and sha256.<br />
+* `KDF_ARGON2I`
+* `KDF_ARGON2D`
+* `KDF_ARGON2ID`
+  Variants of Argon2. Defaults to Argon2id, memory cost 64MiB, time cost 50, parallelism 8.<br />
+  If `adv` is set to `true`...<br />
+* `memoryCost`, `timeCost`, and `parallelism` only affect Argon2
+* `iterations` only affects PBKDF2
 
 #### `clearEncryption()`
   Clear an active `setEncryption()`.
 
 ### Files/text
 
-#### `addFile(path, name, compressed = false)`
-  Add the file at `path` to the image under the name `name`.<br />
-  Set `compressed` to `true` if the file is already compressed via the active compression mode.
+#### `addFile(source, name, compressed = false)`
+  Add the file at `source` to the image under the name `name`.<br />
+  Set `compressed` to `true` if the file is already compressed via the active compression mode.<br />
+  If `source` is a Buffer, that Buffer's data is used as the contents of the file.
 
 #### `addDirectory(path, full = false, recursive = false, compressed = false)`
   Add the contents of the directory at `path` to the image. File names are preserved as-is and the basename of path is used as the base path. Example, `addDirectory('a/b/c')` will add the contents of that directory under `c/`.<br />
@@ -286,10 +304,11 @@ The term "out-of-band" is used to describe information that's needed but *not* s
   Set `recursive` to `true` to recursively add any other directories under the path.<br />
   Set `compressed` to `true` if ALL files under `path` are already compressed via the active compression mode.
 
-#### `addPartialFile(path, name, index, compressed = false)`
-  Add the file at `path` you intend to store in pieces under the name `name` and index `index`.<br />
+#### `addPartialFile(source, name, index, compressed = false)`
+  Add the file at `source` you intend to store in pieces under the name `name` and index `index`.<br />
   Set `compressed` to `true` if the file is already compressed via the active compression mode.<br />
-  `index` can be any integer 0 <= n <= 255 and is used solely for your own reference in `addPartialFilePiece()`.
+  `index` can be any integer 0 <= n <= 255 and is used solely for your own reference in `addPartialFilePiece()`.<br />
+  If `source` is a Buffer, that Buffer's data is used as the contents of the file.
 
 #### `addPartialFilePiece(index, size = 0, last = false)`
   Add a piece of file `index`.<br />
@@ -306,18 +325,24 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 *  `name`: Name of the file.
 *  `size`: Size of the file as it was stored (after compression/encryption).
 *  `realSize`: Uncompressed/decrypted size of the file (only computed *after* extracting).
-*  `async extract(path = './extracted')`: Extract the file to `path`.
+*  `compressed`: Boolean flag for if the file was compressed.
+*  `encrypted`: Boolean flag for if the file was encrypted.
+*  `async extract(path = './extracted')`: Extract the file to `path`. If `path` is `null`, the file is extracted to a Buffer instead, and that Buffer is returned.
 
 `StegPartialFile`
 *  `name`: Name of the file.
 *  `size`:  Size of the file as it was stored (after compression/encryption).
 *  `realSize`: Uncompressed/decrypted size of the file (only computed *after* extracting).
+*  `compressed`: Boolean flag for if the file was compressed.
+*  `encrypted`: Boolean flag for if the file was encrypted.
 *  `count`:  The number of pieces this file is in.
-*  `async extract(path = './extracted')`: Extract the file to `path`.
+*  `async extract(path = './extracted')`: Extract the file to `path`. If `path` is `null`, the file is extracted to a Buffer instead, and that Buffer is returned.
 
 `StegText`
 *  `size`: Size of the text as it was stored (after compression/encryption).
 *  `realSize`: Uncompressed/decrypted size of the text (only computed *after* extracting).
+*  `compressed`: Boolean flag for if the text was compressed.
+*  `encrypted`: Boolean flag for if the text was encrypted.
 *  `async extract()`: Extracts and returns the text.
 
 ### Util
@@ -376,12 +401,10 @@ For packing:
       This is in line with the `ALPHA_*` constants.
 *  `-rand [seed]`<br />
     Set the global seed to the value of `[seed]` if provided, otherwise generate one to use.
+*  `-shuffle [seed]`<br />
+    Set the global shuffle seed to the value of `[seed]` if provided, otherwise generate one to use.
 *  `-dryrun [comp]`<br />
     Set to dryrun mode. If `[comp]` is set, compress files/text blocks during the dry run.
-*  `-savemap <name> <path>` (DEPRECATED)<br />
-    Save `<name>`'s map to `<path>`.
-*  `-loadmap <name> <path>` (DEPRECATED)<br />
-    Load `<name>`'s map from `<path>`.
 *  `-in <path> [frame] [map]`<br />
     Use `<path>` as the input image.<br />
     If `[frame]` is provided, use that frame of `<path>`.<br />
@@ -407,6 +430,8 @@ For packing:
         If `[comp]` is provided, consider all files to already be compressed.<br />
 *  *   `rand [seed]`<br />
         Use the seed `[seed]` if provided, otherwise generate a new random seed to use.
+*  *   `shuffle [seed]`<br />
+        Use the seed `[seed]` if provided, otherwise generate a new random seed to use.
 *  *   `imagetable <in1> <out1> [<in2> <out2> [...]]`<br />
         Create an image table using the provided `<in>` `<out>` pairs.<br />
         Each `<in>` and `<out>` are in the format `[-frame <index>] [-map <map>] <path>`
@@ -424,13 +449,21 @@ For packing:
         `<type>` can be one of..<br />
           `gzip <level>`: Use gzip. `<level>` is between 0 and 9.<br />
           `brotli <level> [text]`: Use Brotli. `<level>` is between 0 and 11. If `[text]` is provided, set Brotli into text compression mode.<br />
-*  *   `encrypt <type>`<br />
-        <type> can be one of..<br />
+*  *   `encrypt <type> [ [kdf] [ <adv> [<memory cost> <time cost> <parallelism>] [<iterations>] ] ]`<br />
+        `<type>` can be one of..<br />
           `aes256`: Use AES 256.<br />
           `camellia256`: Use CAMELLIA 256.<br />
           `aria256`: Use ARIA 256.<br />
           `chacha20`: Use ChaCha20.<br />
           `blowfish`: Use Blowfish.<br />
+        `[kdf]` can be one of..<br />
+          `pbkdf2`<br />
+          `argon2i`<br />
+          `argon2d`<br />
+          `argon2id` (default)<br />
+        If `[kdf]` and `<adv>` are supplied..<br />
+          `<memory cost>`, `<time cost>`, and `<parallelism>`: Settings for Argon2.<br />
+          `<iterations>`: Setting for PBKDF2.<br />
 *  *   `partialfile <path> <index> [name] [comp]`<br />
         Define a file at `<path>` that is to be saved in discreet chunks. `<index>` is an arbitrary integer to use to refer to it in `partialfilepiece` blocks. If `[name]` is defined, use `[name]` as the filename rather than the base filename. If `[comp]` is provided, consider the file already compressed.
 *  *   `partialfilepiece <index> <size> [final]`<br />
@@ -448,6 +481,8 @@ For packing:
     Valid `<sec>` are defined below:
 *  *   `rand`<br />
         Disable the seed. If a global seed was previously in effect, return to using it.
+*  *   `shuffle`<br />
+        Disable the seed. If a global shuffle seed was previously in effect, return to using it.
 *  *   `imagetable`<br />
         Disable the image table. Any changes are kept and if a new table is defined using any of the previous images, their existing data is preserved.
 *  *   `rect`<br />
@@ -484,10 +519,10 @@ For unpacking:
     Use `<path>` as the input image.
 *  `-rand [seed]`<br />
     Same as `-rand` of packing.
+*  `-shuffle [seed]`<br />
+    Same as `-shuffle` of packing.
 *  `-cursor <x> <y>`<br />
     Same as `-cursor` of packing.
-*  `-loadmap <name> <path>` (DEPRECATED)<br />
-    Load `<name>`'s map from `<path>`.
 *  `-salt <salt> [raw]`<br />
     Same as `-salt` of packing.
 *  `-setloadopts/-slo <path> [enc]`<br />

@@ -1,6 +1,6 @@
 import _PNG from 'pngjs';
 import fs from 'fs';
-import { randr, print, Channels, binToDec, decToBin, pad, uintToVLQ } from './util.mjs';
+import { randr, print, Channels, binToDec, decToBin, pad, uintToVLQ, bitShuffle, bitUnshuffle } from './util.mjs';
 import consts from './consts.mjs';
 import WebP from 'node-webpmux';
 import { dirname, basename } from 'path';
@@ -8,7 +8,7 @@ const PNG = _PNG.PNG;
 
 export class Image {
   static map = {};
-  constructor() { this.rand = new randr(); this.loaded = false; }
+  constructor() { this.rand = new randr(); this.shuffle = new randr(); this.loaded = false; }
   async load(o) {
     let { path, buffer, name, map, frame } = o, type;
     if (typeof o === 'string') { path = o; name = basename(o); }
@@ -47,9 +47,10 @@ export class Image {
     }
     this.isBuffer = !!buffer;
     this.data = this.img.data;
-    this.used = { count: 0, max: this.width*this.height };
+    this.used = { count: 0, max: this.width * this.height };
     this.state = {};
     this.rand.seed = -1;
+    this.shuffle.seed = -1;
     this.loaded = true;
     this.src = path || name;
     this.alphaThresh = 255;
@@ -61,15 +62,14 @@ export class Image {
     if (map) { this.loadMap(typeof map == 'string' ? { path: map } : map); }
   }
   loadMap(o) {
-    let { path, buffer, name } = o, buf, { used } = this;
+    let { path, buffer, name } = o, buf, { used } = this, start = 0;
     if (path) {
-      let b;
-      try { b = fs.readFileSync(path, 'binary'); }
-      catch (e) { b = fs.readFileSync(`${dirname(this.src)}/${path}`, 'binary'); }
-      buf = Buffer.from(b, 'binary');
+      try { buf = fs.readFileSync(path); }
+      catch (e) { buf = fs.readFileSync(`${dirname(this.src)}/${path}`); }
     }
     else { buf = buffer; }
-    for (let i = 0, l = buf.length; i < l; i += 4) {
+    if (buf.toString('utf8', 0, 5) == 'STGIM') { start = 5; } // FIXME throw error in v1.5 if != 'STGIM'
+    for (let i = start, l = buf.length; i < l; i += 4) {
       let x = buf.readUInt16LE(i), y = buf.readUInt16LE(i+2);
       used.count++;
       used[`${x},${y}`] = true;
@@ -87,8 +87,9 @@ export class Image {
     if (map) { this.saveMap(typeof map == 'string' ? { path: map } : map); }
   }
   saveMap(o) {
-    let { used } = this, keys = Object.keys(used), buf = Buffer.alloc((keys.length-2)*4), c = 0;
+    let { used } = this, keys = Object.keys(used), buf = Buffer.alloc(5 + ((keys.length - 2) * 4)), c = 5;
     let { path, buffer, name } = o;
+    buf.write('STGIM', 0);
     for (let i = 0, l = keys.length; i < l; i++) {
       if (!/,/.test(keys[i])) { continue; }
       let [x, y] = keys[i].split(',');
@@ -115,9 +116,9 @@ export class Image {
   flush() { if ((this.buf != '') || (this.actions.length)) { this.writeBits('', true); } }
   clear() { this.buf = ''; }
   resetCursor(full) {
-    let r = this.state.rand?this.state.rand:this.rand, rect = this.state.rect;
+    let r = this.state.rand ? this.state.rand : this.rand, rect = this.state.rect;
     if ((!this.state.rand) && (this.rand.seed == -1)) { if (full) { if (rect) { this.setCursor(rect.x, rect.y); } } }
-    else if (this.state.rect) { this.setCursor(r.gen(rect.w)+rect.x, r.gen(rect.h)+rect.y); }
+    else if (this.state.rect) { this.setCursor(r.gen(rect.w) + rect.x, r.gen(rect.h) + rect.y); }
     else { this.setCursor(r.gen(this.width), r.gen(this.height)); }
   }
   advanceCursor() {
@@ -129,41 +130,41 @@ export class Image {
     else { imgx = rect.x; imgy = rect.y; imgw = rect.w; imgh = rect.h; }
     if ((rand) || (master.rand.seed != -1)) {
       let r = rand?rand:master.rand;
-      if (rect) { if (rect.used >= (imgw*imgh)*0.95) { throw new Error('End of rect'); } }
-      while (this.used[`${x},${y}`]) { x = r.gen(imgw)+imgx; y = r.gen(imgh)+imgy; }
+      if (rect) { if (rect.used >= (imgw * imgh) * 0.95) { throw new Error('End of rect'); } }
+      while (this.used[`${x},${y}`]) { x = r.gen(imgw) + imgx; y = r.gen(imgh) + imgy; }
     } else {
       while (this.used[`${x},${y}`]) {
         x++;
-        if (x >= imgw+imgx) { x = imgx; y++; if (y >= imgh+imgy) { throw new Error('End of image'); } }
+        if (x >= imgw + imgx) { x = imgx; y++; if (y >= imgh + imgy) { throw new Error('End of image'); } }
       }
     }
     this.cursor.x = x; this.cursor.y = y;
   };
   writePixel(data) {
-    let { x, y } = this.cursor, { img, data: d, alphaThresh, mode, modeMask } = this, w = img.width, pind = (y*(w*4))+(x*4);
-    let v = [d[pind], d[pind+1], d[pind+2], d[pind+3]], { checkMode } = Image, k, m, f = [], bits, off = 0,
-        maskCount = ((modeMask&4?1:0)+(modeMask&2?1:0)+(modeMask&1?1:0))-1;
-    let chkChannel = (c) => { return (c == 3) || (modeMask & (1 << (2-c))); },
+    let { x, y } = this.cursor, { img, data: d, alphaThresh, mode, modeMask } = this, w = img.width, pind = (y * (w * 4)) + (x * 4);
+    let v = [d[pind], d[pind + 1], d[pind + 2], d[pind + 3]], { checkMode } = Image, k, m, f = [], bits, off = 0,
+        maskCount = ((modeMask & 4 ? 1 : 0) + (modeMask & 2 ? 1 : 0) + (modeMask & 1 ? 1 : 0)) - 1;
+    let chkChannel = (c) => { return (c == 3) || (modeMask & (1 << (2 - c))); },
         write = (c, bits, o) => {
-          let d = bits/3, tbits = (1<<d)-1, shift;
+          let d = bits / 3, tbits = (1 << d) - 1, shift;
           switch (bits) {
             case 32:
-              shift = (maskCount-o+1)*8;
-              v[c] = (data&(255<<shift))>>shift;
+              shift = (maskCount - o + 1) * 8;
+              v[c] = (data & (255 << shift)) >> shift;
               if (v[c] < 0) { v[c] += 256; }
               break;
             default:
-              shift = (maskCount*d)-(o*d);
-              v[c] = (v[c]&~tbits)|((data&(tbits<<shift))>>shift);
+              shift = (maskCount * d) - (o * d);
+              v[c] = (v[c] & ~tbits) | ((data & (tbits << shift)) >> shift);
               break;
           }
         };
-    if ((m = (mode&(7<<3))>>3) == 0) {
+    if ((m = (mode & (7 << 3)) >> 3) == 0) {
       if (v[3] < alphaThresh) { return false; }
       else if ((v[3] == 0) && (alphaThresh == 0)) { return false; }
     }
-    else if ((v[3] >= alphaThresh) && ((m = mode&7) == 0)) { return false; }
-    m = v[3] < alphaThresh ? (mode&(7<<3))>>3 : mode&7;
+    else if ((v[3] >= alphaThresh) && ((m = mode & 7) == 0)) { return false; }
+    m = v[3] < alphaThresh || (v[3] == 0 && alphaThresh == 0) ? (mode & (7 << 3)) >> 3 : mode & 7;
     if (checkMode(m, consts.MODE_3BPP)) { for (let i = 0; i < 3; i++) { if (chkChannel(i)) { write(i, 3, off); off++; } } bits = 3; }
     else if (checkMode(m, consts.MODE_6BPP)) { for (let i = 0; i < 3; i++) { if (chkChannel(i)) { write(i, 6, off); off++; } } bits = 6; }
     else if (checkMode(m, consts.MODE_9BPP)) { for (let i = 0; i < 3; i++) { if (chkChannel(i)) { write(i, 9, off); off++; } } bits = 9; }
@@ -171,28 +172,28 @@ export class Image {
     else if (checkMode(m, consts.MODE_15BPP)) { for (let i = 0; i < 3; i++) { if (chkChannel(i)) { write(i, 15, off); off++; } } bits = 15; }
     else if (checkMode(m, consts.MODE_24BPP)) { for (let i = 0; i < 3; i++) { if (chkChannel(i)) { write(i, 24, off); off++; } } bits = 24; }
     else if (checkMode(m, consts.MODE_32BPP)) { for (let i = 0; i < 4; i++) { if (chkChannel(i)) { write(i, 32, off); off++; } } bits = 32; }
-    let z = bits == 32 ? 8 : (bits/3)*(maskCount+1);
-    print(Channels.DEBUG, `Overwriting ${x}, ${y} (${d[pind]}, ${d[pind+1]}, ${d[pind+2]}, ${d[pind+3]}) with ${v[0]}, ${v[1]}, ${v[2]}, ${v[3]} (data: ${pad(decToBin(data),z,'0')}, mode: ${m}, mode mask ${modeMask})`);
-    for (let i = 0; i < 4; i++) { d[pind+i] = v[i]; }
+    let z = bits == 32 ? 8 : (bits / 3) * (maskCount + 1);
+    print(Channels.DEBUG, `Overwriting ${x}, ${y} (${d[pind]}, ${d[pind + 1]}, ${d[pind + 2]}, ${d[pind + 3]}) with ${v[0]}, ${v[1]}, ${v[2]}, ${v[3]} (data: ${pad(decToBin(data), z, '0')}, mode: ${m}, mode mask ${modeMask})`);
+    for (let i = 0; i < 4; i++) { d[pind + i] = v[i]; }
     return true;
   }
-  writeBits(data, force) {
+  writeBits(_data, force) {
     const MODE = 0, WRITE = 1, CURSOR = 2, MASK = 3;
-    let { img, data: d, mode, modeMask, actions, buf, alphaThresh } = this,
-        { x, y } = this.cursor, maskCount = 3-((modeMask&4?1:0)+(modeMask&2?1:0)+(modeMask&1?1:0)),
-        lasta = actions.length-1;
+    let { img, data: d, mode, modeMask, actions, buf, alphaThresh } = this, { shuffle } = this.state,
+        { x, y } = this.cursor, maskCount = 3 - ((modeMask & 4 ? 1 : 0) + (modeMask & 2 ? 1 : 0) + (modeMask & 1 ? 1 : 0)),
+        lasta = actions.length - 1, data = _data;
     let chk = (x, y, mode) => {
       let { checkMode } = Image,
-          pind = (y*(img.width*4))+(x*4), m,
-          v = [d[pind], d[pind+1], d[pind+2], d[pind+3]];
-      if (v[3] < alphaThresh) { m = (mode&(7<<3))>>3; } else { m = mode&7; }
-      if (checkMode(m, consts.MODE_3BPP)) { return 3-maskCount; }
-      else if (checkMode(m, consts.MODE_6BPP)) { return 6-(maskCount*2); }
-      else if (checkMode(m, consts.MODE_9BPP)) { return 9-(maskCount*3); }
-      else if (checkMode(m, consts.MODE_12BPP)) { return 12-(maskCount*4); }
-      else if (checkMode(m, consts.MODE_15BPP)) { return 15-(maskCount*5); }
-      else if (checkMode(m, consts.MODE_24BPP)) { return 24-(maskCount*8); }
-      else if (checkMode(m, consts.MODE_32BPP)) { return 32-(maskCount*8); }
+          pind = (y * (img.width * 4)) + (x * 4), m,
+          v = [d[pind], d[pind + 1], d[pind + 2], d[pind + 3]];
+      m = v[3] < alphaThresh || (v[3] == 0 && alphaThresh == 0) ? (mode & (7 << 3)) >> 3 : mode & 7;
+      if (checkMode(m, consts.MODE_3BPP)) { return 3 - maskCount; }
+      else if (checkMode(m, consts.MODE_6BPP)) { return 6 - (maskCount * 2); }
+      else if (checkMode(m, consts.MODE_9BPP)) { return 9 - (maskCount * 3); }
+      else if (checkMode(m, consts.MODE_12BPP)) { return 12 - (maskCount * 4); }
+      else if (checkMode(m, consts.MODE_15BPP)) { return 15 - (maskCount * 5); }
+      else if (checkMode(m, consts.MODE_24BPP)) { return 24 - (maskCount * 8); }
+      else if (checkMode(m, consts.MODE_32BPP)) { return 32 - (maskCount * 8); }
       else { return 0; }
     };
     let next = () => { this.advanceCursor(); x = this.cursor.x; y = this.cursor.y; };
@@ -207,6 +208,11 @@ export class Image {
       this.used[`${x},${y}`] = true;
       next();
     };
+    if ((shuffle) || (this.shuffle.seed != -1)) {
+      let x = bitShuffle(shuffle || this.shuffle, data);
+      print(Channels.DEBUG, `Shuffling bits. Original ${data}, result ${x}`);
+      data = x;
+    }
     if (actions.length == 0) { buf += data; }
     else if (lasta != -1) {
       if (actions[lasta][0] == WRITE) { actions[lasta][1] += data; }
@@ -247,17 +253,17 @@ export class Image {
   }
   readPixel(silent = false) {
     let { x, y } = this.cursor;
-    let { img, data: d, alphaThresh, mode, modeMask } = this, pind = (y*(img.width*4))+(x*4);
-    let v = [d[pind], d[pind+1], d[pind+2], d[pind+3]];
+    let { img, data: d, alphaThresh, mode, modeMask } = this, pind = (y * (img.width * 4)) + (x * 4);
+    let v = [d[pind], d[pind + 1], d[pind + 2], d[pind + 3]];
     let { checkMode } = Image;
     let s = '', k, m, read = false;
-    let chkChannel = (c) => { return (c == 3) || (modeMask & (1 << (2-c))); };
-    if ((m = (mode&(7<<3))>>3) == 0) {
+    let chkChannel = (c) => { return (c == 3) || (modeMask & (1 << (2 - c))); };
+    if ((m = (mode & (7 << 3)) >> 3) == 0) {
       if (v[3] < alphaThresh) { return ''; }
       else if ((v[3] == 0) && (alphaThresh == 0)) { return ''; }
     }
-    else if ((v[3] >= alphaThresh) && ((m = mode&7) == 0)) { return ''; }
-    m = v[3] < alphaThresh ? (mode&(7<<3))>>3 : mode&7;
+    else if ((v[3] >= alphaThresh) && ((m = mode & 7) == 0)) { return ''; }
+    m = v[3] < alphaThresh || (v[3] == 0 && alphaThresh == 0) ? (mode & (7 << 3)) >> 3 : mode & 7;
     for (let i = 0; i < 4; i++) {
       if (!chkChannel(i)) { continue; }
       read = true;
@@ -278,7 +284,7 @@ export class Image {
   readBits(count) {
     let { x, y } = this.cursor,
         { img, data: d, master, buf } = this,
-        { rect } = this.state, k;
+        { rect, shuffle } = this.state, k;
     let next = () => { this.advanceCursor(); x = this.cursor.x; y = this.cursor.y; };
     if (count == 0) { this.used[`${x},${y}`] = true; next(); return; }
     while (buf.length < count) {
@@ -291,8 +297,13 @@ export class Image {
       this.used[`${x},${y}`] = true;
       next();
     }
-    k = buf.substr(0, count); this.buf = buf.substr(count);
+    k = buf.substr(0, count);
+    this.buf = buf.substr(count);
     print(Channels.DEBUG, `Read ${count} bits and got ${k}`);
+    if ((shuffle) || (this.shuffle.seed != -1)) {
+      k = bitUnshuffle(shuffle || this.shuffle, k);
+      print(Channels.DEBUG, `Bits were shuffled. Unshuffled: ${k}`);
+    }
     return k;
   }
   readString() {
@@ -314,7 +325,7 @@ export class Image {
     }
     return binToDec(s);
   }
-  static checkMode(m, c) { return (m&7)==c; }
+  static checkMode(m, c) { return (m & 7) == c; }
   static resetMap() { delete Image.map; Image.map = {}; }
 
   async #loadPNG(d) {

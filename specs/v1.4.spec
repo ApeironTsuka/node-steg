@@ -16,6 +16,17 @@ CHANGELOG:
       'index' type fields in 4bit chunks as values are not expected to exceed 7 very often (1 chunk)
       fixed-sized fields, such as SEC_ENCRYPTION's IV or SEC_RAND's seed, are unchanged
     added CAMELLIA256 and ARIA256 support to SEC_ENCRYPTION
+  v1.3
+    removed reserved space in settings block since specs don't really retain backwards/forwards support in that way
+    changed format of SEC_IMAGETABLE entirely
+      no longer uses 'frame|n|name' syntax for webp animations
+      supports loading maps
+    added CHACHA20 and BLOWFISH support to SEC_ENCRYPTION
+  v1.4
+    removed reserved space in SEC_TEXT flags
+    added SEC_SHUFFLE
+      shuffles written bits randomly to try to further obfuscate
+    changed default pbkdf2 digest to sha512 and iterations to 1,000,000 (were sha1 and 100,000 respectively prior)
 
 read(): read amount of data honoring any settings/arguments. Any overread is cached for the next read(s)
 vlq(): read a uint using the given chunk size. Any overread is cached for the next read(s)
@@ -25,7 +36,7 @@ Header part 1 (header mode and mode mask affect these):
   read(12bit): version
   read(6bit): mode
 Header part 2 (global mode affects these, header mode mask affects settings but not section count):
-  read(14bit): settings
+  read(6bit): settings
   vlq(4): section count (max 511)
 Data (global mode and mode mask affect these, unless a SEC_MODE and/or SEC_MODEMASK is in effect instead):
   loop over sections:
@@ -40,7 +51,7 @@ Mode:
   000xxx: 3 bit mode value for non-alpha pixels from constants table
   The default for both the header mode and global mode is MODE_A3BPP|MODE_3BPP
 Settings:
-  xxx00000000000: modify where the alpha/non-alpha threshhold is
+  xxx000: modify where the alpha/non-alpha threshhold is
   000: default. alpha is any pixels where alpha < 255
   001: alpha is any pixel where alpha < 220
   010: alpha is any pixel where alpha < 184
@@ -49,8 +60,7 @@ Settings:
   101: alpha is any pixel where alpha < 76
   110: alpha is any pixel where alpha < 40
   111: alpha is any pixel where alpha = 0
-  000xxx00000000: mode mask
-  000000xxxxxxxx: reserved
+  000xxx: mode mask
 Strings:
   loop until(00000000):
     read(8bit)
@@ -66,7 +76,11 @@ Sections:
   SEC_IMAGETABLE:
     vlq(4): number of images
     loop images:
-      read(string): image file name
+      read(1bit): frame index flag
+      read(1bit): map flag
+      vlq(4): frame index (if flag is set)
+      read(string): map file name (if flag is set)
+      read(string): iamge file name
     end
     specify which files go to which images
     allows you to have a small "controller" image holding the headers and several images holding files
@@ -95,16 +109,32 @@ Sections:
       read(4bit): compression quality (0-11)
       read(1bit): text mode
   SEC_ENCRYPTION:
+    read(2bit): kdf (from const table)
+    read(1bit): advanced kdf settings
+    if kdf is argon2i/argon2d/argon2id:
+      read(128bit): salt
+    advanced settings:
+      pbkdf2
+        vlq(8): iterations
+      argon2i/argon2d/argon2id:
+        vlq(8): memory cost
+        vlq(8): time cost
+        vlq(8): parallelism
     read(4bit): algorithm (from const table)
-    AES256, CAMELLIA256, ARIA256:
+    AES256, CAMELLIA256, ARIA256, CHACHA20, BLOWFISH:
       read(128bit): IV
       AES256: AES-256-CBC
       CAMELLIA256: CAMELLIA-256-CBC
       ARIA256: ARIA-256-CBC
+      CHACHA20: CHACHA20
+      BLOWFISH: BF-CBC
       IV is auto-generated via cryto-safe PRNG
       use this IV (and user-supplied password) to run the SEC_FILE through (happens after SEC_COMPRESSION)
-      key is generated from password via pbkdf2 (sha1, 100000 iterations, unique per-version 32byte salt)
+    if kdf is pbkdf2
+      key is generated from password via pbkdf2 (sha512, default 1000000 iterations, unique per-version 32byte salt)
       salt can be overridden
+    if kdf is argon2id
+      key is generated from password via argon2id (defaults time cost 50, memory cost 65536, parallelism 8, unique per-version 32byte pepper)
   SEC_PARTIALFILE:
     vlq(8): file size
     read(string): file name
@@ -132,11 +162,13 @@ Sections:
     vlq(8): length
     read(8*length): data
     mask
-      x000: honor SEC_COMPRESSION
-      0x00: honor SEC_ENCRYPTION
-      00xx: reserved
+      x0: honor SEC_COMPRESSION
+      0x: honor SEC_ENCRYPTION
   SEC_MODEMASK:
     read(3bit): mode mask
     override the global mode mask with this one until either another SEC_MODEMASK is found or SEC_MODEMASK is cleared
     write buffer is flushed when both setting and clearing
+  SEC_SHUFFLE:
+    read(32bit): seed
+    write buffer is flushed when setting, but not when clearing
 

@@ -1,0 +1,50 @@
+This document only covers changes to the API.
+
+v1.4.0
+  Added 'useBufs' flag to pack()/unpack()
+  Added Builder useTempBuffers()
+  Added fileReader/fileWriter to util.mjs
+  Added Builder setShuffleSeed(), clearShuffleSeed(), and setGlobalShuffleSeed()
+  Added -shuffle and -ns shuffle flags to bin/steg.mjs
+  Added getCryptKeyArgon2id to utils.mjs
+  Added digest and iterations arguments to getCryptKeyPBKDF2 in util.mjs. digest defaults to sha1 and iterations defaults to 100,000 for backward compatibility
+  Added KDF section to SEC_ENCRYPTION with optional advanced settings for supported KDFs
+  Added support for using Argon2id as KDF for SEC_ENCRYPTION. Time cost 50, memory cost 65536 (64mb), parallelism 8, uses the supplied salt as pepper instead. Uses 512mb of RAM to compute
+  Added KDF_PBKDF2 and KDF_ARGON2ID to consts.mjs
+  Added KDF argument to Builder.setEncryption. Defaults to Argon2id
+  Added KDF flag to -ns encryption in bin/steg.mjs
+  Added .compressed and .encrypted properties to StegFile, StegPartialFile, and StegText
+  Changed Builder addFile() and addPartialFile() to now support passing in a Buffer instance instead of a path
+  Changed StegFile and StegPartialFile extract() to support being passed null to return a Buffer
+  Made Argon2id the default KDF for 1.4+
+  Updated stubs.mjs to be in line with v1 implementations
+  Renamed getCryptKey to getCryptKeyPBKDF2 in utils.mjs. getCryptKey is now a thin wrapper around getCryptKeyPBKDF2 (will be removed in v1.5)
+  Removed 'keep' flag from save()
+  Removed 'map' from save()/load()
+  Removed LATEST_MAJOR/LATEST_MINOR constant mirroring from createbuilder.mjs
+  Removed other deprecated map code paths
+  Removed -map, -savemap, and -loadmap from bin/steg.mjs
+
+v1.3.2 - v1.3.4
+  No API changes
+
+v1.3.1
+  Added -silent, -v, -vv, and -debug to pack/unpack modes in bin/steg.mjs
+
+v1.3.0
+  Added convertSalt() to util.mjs
+  Added override for salt in Builder getLoadOpts() and setLoadOpts()
+  Added object-based syntax in Image load/save, including image tables
+  Added support for map save/load on image table entries. This saves the map name(s) in the image table itself
+  Added support for saving/loading images/maps to/from buffers
+  Added Builder setBufferMap()
+  Changed Builder .save() to now return an array of the object format to give access to saved buffers
+  Deprecated -savemap, -loadmap, and -map flags in bin/steg.mjs in favor of the new syntax in the -in, -out, and -ns imagetable flags
+  Deprecated 'frame|n|path/name' syntax for WebP animations
+  Deprecated Builder loadMap(), saveMap(), and keep flag
+
+v1.2.0
+  Added CLI tool under bin/steg.mjs
+  Added [read/write]Int and [read/write]VLQ to Image class
+  Moved LATEST_MAJOR/LATEST_MINOR constants rom createbuilder.mjs to const.mjs. createbuilder.mjs mirrors them for backwards combatibility (though their use is deprecated)
+  Added 'x', 'y', 'keep', 'salt', and 'map' flags to save()/load()

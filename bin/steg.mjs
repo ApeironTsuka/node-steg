@@ -28,24 +28,23 @@ function parseCmdLine(args) {
         case '-v': channel = util.Channels.VERBOSE; break;
         case '-vv': channel = util.Channels.VVERBOSE; break;
         case '-debug': channel = util.Channels.DEBUG; debug = true; break;
-        case '-version': case '-ver': test(i+1); state.version = args[++i]; break;
-        case '-headmode': case '-hm': test(i+1); state.hm = args[++i]; break;
-        case '-headmodemask': case '-hmm': test(i+1); state.hmm = args[++i]; break;
-        case '-mode': case '-m': test(i+1); state.m = args[++i]; break;
-        case '-modemask': case '-mm': test(i+1); state.mm = args[++i]; break;
-        case '-salt': test(i+1); state.salt = args[++i]; if (test(i+1, true, 'raw')) { state.raw = true; i++; } break;
-        case '-alpha': test(i+1); state.alpha = parseInt(args[++i]); break;
-        case '-rand': if (test(i+1, true)) { state.rand = args[++i]; } else { state.rand = true; } break;
-        case '-dryrun': state.dryrun = true; if (test(i+1, true, 'comp')) { state.dryrunc = true; i++; } break;
-        case '-savemap': test(i+1); test(i+2); if (!state.savemap) { state.savemap = []; } state.savemap.push({ n: args[++i], p: args[++i] }); console.log('-savemap is deprecated and will be removed in 1.4.0'); break;
-        case '-map': test(i+1); state.map = args[++i]; console.log('-map is deprecated and will be removed in 1.4.0'); break;
+        case '-version': case '-ver': test(i + 1); state.version = args[++i]; break;
+        case '-headmode': case '-hm': test(i + 1); state.hm = args[++i]; break;
+        case '-headmodemask': case '-hmm': test(i + 1); state.hmm = args[++i]; break;
+        case '-mode': case '-m': test(i + 1); state.m = args[++i]; break;
+        case '-modemask': case '-mm': test(i + 1); state.mm = args[++i]; break;
+        case '-salt': test(i + 1); state.salt = args[++i]; if (test(i + 1, true, 'raw')) { state.raw = true; i++; } break;
+        case '-alpha': test(i + 1); state.alpha = parseInt(args[++i]); break;
+        case '-rand': if (test(i + 1, true)) { state.rand = args[++i]; } else { state.rand = true; } break;
+        case '-shuffle': if (test(i + 1, true)) { state.shuffle = args[++i]; } else { state.shuffle = true; } break;
+        case '-dryrun': state.dryrun = true; if (test(i + 1, true, 'comp')) { state.dryrunc = true; i++; } break;
         case '-in':
           {
             let frame = -1, map = false, path;
-            test(i+1);
+            test(i + 1);
             path = args[++i];
-            if (test(i+1, true)) { frame = args[++i]; }
-            if (test(i+1, true)) { map = args[++i]; }
+            if (test(i + 1, true)) { frame = args[++i]; }
+            if (test(i + 1, true)) { map = args[++i]; }
             if ((frame != -1) && (!/^[0-9]*$/.test(frame))) { map = frame; frame = -1; }
             state.in = { frame: parseInt(frame), map, path };
           }
@@ -53,16 +52,16 @@ function parseCmdLine(args) {
         case '-out':
           {
             let frame = -1, map = false, path;
-            test(i+1);
+            test(i + 1);
             path = args[++i];
-            if (test(i+1, true)) { frame = args[++i]; }
-            if (test(i+1, true)) { map = args[++i]; }
+            if (test(i + 1, true)) { frame = args[++i]; }
+            if (test(i + 1, true)) { map = args[++i]; }
             if ((frame != -1) && (!/^[0-9]*$/.test(frame))) { map = frame; frame = -1; }
             state.out = { frame: parseInt(frame), map, path };
           }
           break;
-        case '-cursor': test(i+1); test(i+2); state.cursor = { x: parseInt(args[++i]), y: parseInt(args[++i]) }; break;
-        case '-getloadopts': case '-glo': test(i+1); state.glo = args[++i]; if (test(i+1, true, 'enc')) { s.gloe = true; i++; } break;
+        case '-cursor': test(i + 1); test(i + 2); state.cursor = { x: parseInt(args[++i]), y: parseInt(args[++i]) }; break;
+        case '-getloadopts': case '-glo': test(i + 1); state.glo = args[++i]; if (test(i + 1, true, 'enc')) { s.gloe = true; i++; } break;
         case '-newsec': case '-ns':
           {
             let s = {};
@@ -71,31 +70,35 @@ function parseCmdLine(args) {
             s.stype = args[i];
             switch (args[i]) {
               case 'file':
-                test(i+1); test(i+2);
+                test(i + 1); test(i + 2);
                 s.path = args[++i];
-                if (test(i+1, true)) { s.name = args[++i]; }
-                if (test(i+1, true, 'comp')) { s.comp = true; i++; }
+                if (test(i + 1, true)) { s.name = args[++i]; }
+                if (test(i + 1, true, 'comp')) { s.comp = true; i++; }
                 break;
               case 'dir':
-                test(i+1);
+                test(i + 1);
                 s.path = args[++i];
-                if (test(i+1, true, 'full')) { s.full = true; i++; }
-                if (test(i+1, true, 'recurse')) { s.recurse = true; i++; }
-                if (test(i+1, true, 'comp')) { s.compressed  = true; i++; }
+                if (test(i + 1, true, 'full')) { s.full = true; i++; }
+                if (test(i + 1, true, 'recurse')) { s.recurse = true; i++; }
+                if (test(i + 1, true, 'comp')) { s.compressed  = true; i++; }
                 break;
               case 'rand':
-                if (test(i+1, true)) { s.rand = args[++i]; i++; }
+                if (test(i + 1, true)) { s.rand = args[++i]; i++; }
                 else { s.rand = true; }
+                break;
+              case 'shuffle':
+                if (test(i + 1, true)) { s.shuffle = args[++i]; i++; }
+                else { s.shuffle = true; }
                 break;
               case 'imagetable':
                 s.table = { in: [], out: [] };
                 {
                   let where = 'in', frame = -1, map = false;
-                  for (let x = i+1, xl = l; x < xl; x++) {
+                  for (let x = i + 1, xl = l; x < xl; x++) {
                     if (!test(x, true)) {
                       switch (args[x]) {
-                        case '-frame': if (test(x+1)) { frame = parseInt(args[++x]); } break;
-                        case '-map': if (test(x+1)) { map = args[++x]; } break;
+                        case '-frame': if (test(x + 1)) { frame = parseInt(args[++x]); } break;
+                        case '-map': if (test(x + 1)) { map = args[++x]; } break;
                         default: throw new Error(`Unexpected flag ${args[x]}`);
                       }
                       continue;
@@ -110,66 +113,85 @@ function parseCmdLine(args) {
                 }
                 break;
               case 'rect':
-                test(i+1); test(i+2); test(i+3); test(i+4);
+                test(i + 1); test(i + 2); test(i + 3); test(i + 4);
                 s.x = parseInt(args[++i]); s.y = parseInt(args[++i]);
                 s.w = parseInt(args[++i]); s.h = parseInt(args[++i]);
                 break;
               case 'cursor':
-                test(i+1);
+                test(i + 1);
                 s.cmd = args[++i];
                 switch (s.cmd) {
                   case 'push': case 'pop': break;
                   case 'move':
-                    test(i+1); test(i+2);
+                    test(i + 1); test(i + 2);
                     s.x = parseInt(args[++i]); s.y = parseInt(args[++i]);
-                    if (test(i+1, true)) { s.index = parseInt(args[++i]); }
+                    if (test(i + 1, true)) { s.index = parseInt(args[++i]); }
                     break;
                   case 'image':
-                    test(i+1);
+                    test(i + 1);
                     s.index = parseInt(args[++i]);
                     break;
                   default: break;
                 }
                 break;
               case 'compress':
-                test(i+1); test(i+2);
+                test(i + 1); test(i + 2);
                 s.type = args[++i];
                 s.level = parseInt(args[++i]);
-                if (test(i+1, true, 'text')) { s.text = true; i++; }
+                if (test(i + 1, true, 'text')) { s.text = true; i++; }
                 break;
               case 'encrypt':
-                test(i+1);
+                test(i + 1);
                 s.type = args[++i];
+                s.kdf = 'argon2id';
+                if (test(i + 1, true, 'argon2i')) { s.kdf = 'argon2i'; i++; }
+                else if (test(i + 1, true, 'argon2d')) { s.kdf = 'argon2d'; i++; }
+                else if (test(i + 1, true, 'argon2id')) { s.kdf = 'argon2id'; i++; }
+                else if (test(i + 1, true, 'pbkdf2')) { s.kdf = 'pbkdf2'; i++; }
+                if (test(i + 1, true, 'adv')) {
+                  s.adv = true;
+                  i++;
+                  switch (s.kdf) {
+                    case 'argon2i': case 'argon2d': case 'argon2id':
+                      test(i + 1); s.memoryCost = args[++i];
+                      test(i + 1); s.timeCost = args[++i];
+                      test(i + 1); s.parallelism = args[++i];
+                      break;
+                    case 'pbkdf2':
+                      test(i + 1); s.iterations = args[++i];
+                      break;
+                  }
+                }
                 break;
               case 'partialfile':
-                test(i+1); test(i+2);
+                test(i + 1); test(i + 2);
                 s.path = args[++i];
                 s.index = parseInt(args[++i]);
-                if (test(i+1, true)) { s.name = args[++i]; }
-                if (test(i+1, true, 'comp')) { s.compressed = true; i++; }
+                if (test(i + 1, true)) { s.name = args[++i]; }
+                if (test(i + 1, true, 'comp')) { s.compressed = true; i++; }
                 break;
               case 'partialfilepiece':
-                test(i+1); test(i+2);
+                test(i + 1); test(i + 2);
                 s.index = parseInt(args[++i]);
                 s.size = parseInt(args[++i]);
-                if (test(i+1, true, 'final')) { s.final = true; i++; }
+                if (test(i + 1, true, 'final')) { s.final = true; i++; }
                 break;
               case 'mode':
-                test(i+1);
+                test(i + 1);
                 s.mode = args[++i];
                 break;
               case 'modemask':
-                test(i+1);
+                test(i + 1);
                 s.mask = args[++i];
                 break;
               case 'alpha':
-                test(i+1);
+                test(i + 1);
                 s.alpha = parseInt(args[++i]);
                 break;
               case 'text':
-                test(i+1);
+                test(i + 1);
                 s.text = args[++i];
-                if (test(i+1, true)) { s.honor = args[++i]; }
+                if (test(i + 1, true)) { s.honor = args[++i]; }
                 break;
               default: throw new Error(`Unknown sect ${args[i]}`); break;
             }
@@ -180,10 +202,11 @@ function parseCmdLine(args) {
           {
             let s = {};
             s.clear = true;
-            test(i+1);
+            test(i + 1);
             s.type = args[++i];
             switch (s.type) {
               case 'rand':
+              case 'shuffle':
               case 'imagetable':
               case 'rect':
               case 'compress':
@@ -208,25 +231,25 @@ function parseCmdLine(args) {
         case '-v': channel = util.Channels.VERBOSE; break;
         case '-vv': channel = util.Channels.VVERBOSE; break;
         case '-debug': channel = util.Channels.DEBUG; debug = true; break;
-        case '-headmode': case '-hm': test(i+1); state.hm = args[++i]; break;
-        case '-headmodemask': case '-hmm': test(i+1); state.hmm = args[++i]; break;
+        case '-headmode': case '-hm': test(i + 1); state.hm = args[++i]; break;
+        case '-headmodemask': case '-hmm': test(i + 1); state.hmm = args[++i]; break;
         case '-image':
           {
             let frame = -1, map = false, path;
-            test(i+1);
+            test(i + 1);
             path = args[++i];
-            if (test(i+1, true)) { frame = args[++i]; }
-            if (test(i+1, true)) { map = args[++i]; }
+            if (test(i + 1, true)) { frame = args[++i]; }
+            if (test(i + 1, true)) { map = args[++i]; }
             if ((frame != -1) && (!/^[0-9]*$/.test(frame))) { map = frame; frame = -1; }
             state.image = { frame: parseInt(frame), map, path };
           }
           break;
-        case '-rand': test(i+1); state.rand = args[++i]; break;
-        case '-cursor': test(i+1); test(i+2); state.cursor = { x: parseInt(args[++i]), y: parseInt(args[++i]) }; break;
-        case '-loadmap': test(i+1); test(i+2); if (!state.loadmap) { state.loadmap = []; } state.loadmap.push({ n: args[++i], p: args[++i] }); console.log('-loadmap is deprecated and will be removed in 1.4.0'); break;
-        case '-salt': test(i+1); state.salt = args[++i]; if (test(i+1, true, 'raw')) { state.raw = true; i++; } break;
-        case '-setloadopts': case '-slo': test(i+1); state.slo = args[++i]; if (test(i+1, true, 'enc')) { s.sloe = true; i++; } break;
-        case '-extract': test(i+1); state.extract = args[++i]; break;
+        case '-rand': test(i + 1); state.rand = args[++i]; break;
+        case '-shuffle': test(i + 1); state.shuffle = args[++i]; break;
+        case '-cursor': test(i + 1); test(i + 2); state.cursor = { x: parseInt(args[++i]), y: parseInt(args[++i]) }; break;
+        case '-salt': test(i + 1); state.salt = args[++i]; if (test(i + 1, true, 'raw')) { state.raw = true; i++; } break;
+        case '-setloadopts': case '-slo': test(i + 1); state.slo = args[++i]; if (test(i + 1, true, 'enc')) { s.sloe = true; i++; } break;
+        case '-extract': test(i + 1); state.extract = args[++i]; break;
         default: throw new Error(`Unknown flag ${args[i]}`); break;
       }
     }
@@ -275,7 +298,7 @@ async function run() {
   util.setChannel(channel);
   if (state.pack) {
     if (state.version) { let v = state.version.split('.'); bldr = CreateBuilder(parseInt(v[0]), parseInt(v[1])); }
-    else { bldr = CreateBuilder(); }
+    else { bldr = CreateBuilder(major, minor); }
     bldr.cliPasswordHandler();
     if (state.hm) { bldr.setHeaderMode(parseMode(state.hm)); }
     if (state.hmm) { bldr.setHeaderModeMask(parseModeMask(state.hmm)); }
@@ -284,9 +307,9 @@ async function run() {
     if (state.salt) { bldr.setSalt(state.salt, state.raw); }
     if (state.alpha) { bldr.setGlobalAlphaBounds(Math.max(0, Math.min(7, state.alpha))); }
     if (state.rand) { bldr.setGlobalSeed(state.rand); }
+    if (state.shuffle) { bldr.setGlobalShuffleSeed(state.shuffle); }
     if (state.cursor) { bldr.setInitialCursor(state.cursor.x, state.cursor.y); }
     if (state.dryrun) { bldr.dryrun(!!state.dryrunc); }
-    if (state.loadmap) { for (let i = 0, maps = state.loadmap, l = maps.length; i < l; i++) { bldr.loadMap(maps[i].n, maps[i].p); } }
     if (state.in) { bldr.inputImage(state.in); }
     if (state.out) { bldr.outputImage(state.out); }
     if (state.secs) {
@@ -299,6 +322,11 @@ async function run() {
             if (sec.clear) { bldr.clearSeed(); }
             else if (bldr.rand === true) { bldr.setSeed(decToHash(randomBytes(4).readUInt32LE())); }
             else { bldr.setSeed(bldr.rand); }
+            break;
+          case 'shuffle':
+            if (sec.clear) { bldr.clearShuffleSeed(); }
+            else if (bldr.shuffle === true) { bldr.setShuffleSeed(decToHash(randomBytes(4).readUInt32LE())); }
+            else { bldr.setShuffleSeed(bldr.shuffle); }
             break;
           case 'imagetable': if (sec.clear) { bldr.clearImageTable(); } else { bldr.setImageTable(sec.table.in, sec.table.out); } break;
           case 'rect': if (sec.clear) { bldr.clearRect(); } else { bldr.setRect(sec.x, sec.y, sec.w, sec.h); } break;
@@ -324,14 +352,23 @@ async function run() {
           case 'encrypt':
             if (sec.clear) { bldr.clearEncryption(); }
             else {
+              let type, kdf;
               switch (sec.type) {
-                case 'aes256': bldr.setEncryption(consts.CRYPT_AES256); break;
-                case 'camellia256': bldr.setEncryption(consts.CRYPT_CAMELLIA256); break;
-                case 'aria256': bldr.setEncryption(consts.CRYPT_ARIA256); break;
-                case 'chacha20': bldr.setEncryption(consts.CRYPT_CHACHA20); break;
-                case 'blowfish': bldr.setEncryption(consts.CRYPT_BLOWFISH); break;
+                case 'aes256': type = consts.CRYPT_AES256; break;
+                case 'camellia256': type = consts.CRYPT_CAMELLIA256; break;
+                case 'aria256': type = consts.CRYPT_ARIA256; break;
+                case 'chacha20': type = consts.CRYPT_CHACHA20; break;
+                case 'blowfish': type = consts.CRYPT_BLOWFISH; break;
                 default: throw new Error(`Unknown encryption type ${sec.type}`); break;
               }
+              switch (sec.kdf) {
+                case 'pbkdf2': kdf = consts.KDF_PBKDF2; break;
+                case 'argon2i': kdf = consts.KDF_ARGON2I; break;
+                case 'argon2d': kdf = consts.KDF_ARGON2D; break;
+                case 'argon2id': kdf = consts.KDF_ARGON2ID; break;
+                default: throw new Error(`Unknown encryption kdf ${sec.kdf}`); break;
+              }
+              bldr.setEncryption(type, undefined, kdf, sec);
             }
             break;
           case 'partialfile': bldr.addPartialFile(sec.path, sec.name, sec.index, sec.compressed); break;
@@ -344,19 +381,15 @@ async function run() {
       }
     }
     if (state.glo) { fs.writeFileSync(state.glo, await bldr.getLoadOpts(true, state.gloe), 'binary'); }
-    if (state.save) {
-      if (state.savemap) { bldr.keep(); }
-      await bldr.save();
-      if (state.savemap) { for (let i = 0, maps = state.savemap, l = maps.length; i < l; i++) { bldr.saveMap(maps[i].n, maps[i].p); } }
-    }
+    if (state.save) { await bldr.save(); }
   } else if (state.unpack) {
     bldr = CreateBuilder();
     bldr.cliPasswordHandler();
     if (state.hm) { bldr.setHeaderMode(parseMode(state.hm)); }
     if (state.hmm) { bldr.setHeaderModeMask(parseModeMask(state.hmm)); }
     if (state.rand) { bldr.setGlobalSeed(state.rand); }
+    if (state.shuffle) { bldr.setGlobalShuffleSeed(state.shuffle); }
     if (state.cursor) { bldr.setInitialCursor(state.cursor.x, state.cursor.y); }
-    if (state.loadmap) { for (let i = 0, maps = state.loadmap, l = maps.length; i < l; i++) { bldr.loadMap(maps[i].n, maps[i].p); } }
     if (state.salt) { bldr.setSalt(state.salt, state.raw); }
     if (state.image) { bldr.inputImage(state.image); }
     if (state.slo) { await bldr.setLoadOpts(fs.readFileSync(state.slo, 'binary'), true, state.sloe); }
@@ -369,9 +402,9 @@ async function run() {
       }
     } else {
       for (let i = 0, l = secs.length; i < l; i++) {
-        if (secs[i] instanceof StegFile) { console.log(`File\n  Name: ${secs[i].name}\n  Size: ${secs[i].size}${secs[i].state.com?'\n  Compressed':''}${secs[i].state.enc?'\n  Encrypted':''}`); }
-        else if (secs[i] instanceof StegPartialFile) { console.log(`Partial File\n  Name: ${secs[i].name}\n  Size: ${secs[i].size}${secs[i].state.com?'\n  Compressed':''}${secs[i].state.enc?'\n  Encrypted':''}\n  Piece count: ${secs[i].count}`); }
-        else if (secs[i] instanceof StegText) { console.log(`Text\n  Size: ${secs[i].size}${secs[i].state.com?'\n  Compressed':''}${secs[i].state.enc?'\n  Encrypted':''}`); if (secs[i].size < 100) { console.log('  Text:', await secs[i].extract()); } else { console.log(`  Text length too long to comfortably preview (${secs[i].size})`); } }
+        if (secs[i] instanceof StegFile) { console.log(`File\n  Name: ${secs[i].name}\n  Size: ${secs[i].size}${secs[i].compressed?'\n  Compressed':''}${secs[i].encrypted?'\n  Encrypted':''}`); }
+        else if (secs[i] instanceof StegPartialFile) { console.log(`Partial File\n  Name: ${secs[i].name}\n  Size: ${secs[i].size}${secs[i].compressed?'\n  Compressed':''}${secs[i].encrypted?'\n  Encrypted':''}\n  Piece count: ${secs[i].count}`); }
+        else if (secs[i] instanceof StegText) { console.log(`Text\n  Size: ${secs[i].size}${secs[i].compressed?'\n  Compressed':''}${secs[i].encrypted?'\n  Encrypted':''}`); if (secs[i].size < 100) { console.log('  Text:', await secs[i].extract()); } else { console.log(`  Text length too long to comfortably preview (${secs[i].size})`); } }
       }
     }
   }

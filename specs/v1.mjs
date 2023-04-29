@@ -9,36 +9,41 @@ import { pad, randr,
          alphaToBits, bitsToAlpha,
          gzip, gunzip,
          brotli, unbrotli,
-         getCryptKey, getMD5Key, generateIV,
+         getCryptKey, getCryptKeyPBKDF2, getCryptKeyArgon2,
+         getMD5Key, generateIV,
          cryptaes256, decryptaes256,
          cryptcamellia256, decryptcamellia256,
          cryptaria256, decryptaria256,
          cryptchacha20, decryptchacha20,
          cryptblowfish, decryptblowfish,
-         packString, unpackString,
-         copyf, convertSalt,
+         packString, unpackString, convertSalt,
+         fileReader, fileWriter, copyf,
          print, Channels, debug
        } from '../util.mjs';
 import { Steg, StegFile, StegPartialFile, StegText } from '../stubs.mjs';
-const VERSION_MAJOR = 1, VERSION_MINOR = 2;
+const VERSION_MAJOR = consts.LATEST_MAJOR, VERSION_MINOR = consts.LATEST_MINOR;
 const CRYPT_SALT = {
   v11: '546ac12e6786afb81045a6401a0e0342cb341b450cfc06f87e081b7ec4cae6a7',
   v12: '192f8633473d2a6e8a35e886d3f5c29bdf807bab22c73630efb54cc11d9aed23',
-  v13: 'cbd55f4182df039b40b20473528f2a658a102d20b87eedfe5b82f13dc414fe03'
+  v13: 'cbd55f4182df039b40b20473528f2a658a102d20b87eedfe5b82f13dc414fe03',
+  v14: '21e96ad4e34e891fcafbe8a6b690d2fd2de3fa57b285f307a5ee67770fac2b8b'
 };
-function getSalt(a,b,h) {
+function getSalt(a, b, h, asBuffer) {
+  let salt;
   switch (a) { case 1: break; default: throw new Error(`Unknown major verion ${a}`); }
   if ((b >= 2) && (h)) { return h; }
   switch (b) {
-    case 1: return CRYPT_SALT.v11;
-    case 2: return CRYPT_SALT.v12;
-    case 3: return CRYPT_SALT.v13;
+    case 1: salt = CRYPT_SALT.v11; break;
+    case 2: salt = CRYPT_SALT.v12; break;
+    case 3: salt = CRYPT_SALT.v13; break;
+    case 4: salt = CRYPT_SALT.v14; break;
     default: throw new Error(`Unknown minor version ${b}`);
   }
+  return asBuffer ? Buffer.from(salt, 'hex') : salt;
 }
 function fixMode(m) {
-  if (((m&consts.MODE_32BPP) == consts.MODE_32BPP) ||
-      ((m&consts.MODE_A32BPP) == consts.MODE_A32BPP)) { return consts.MODE_A32BPP|consts.MODE_32BPP; }
+  if (((m & consts.MODE_32BPP) == consts.MODE_32BPP) ||
+      ((m & consts.MODE_A32BPP) == consts.MODE_A32BPP)) { return consts.MODE_A32BPP | consts.MODE_32BPP; }
   return m;
 }
 export class v1 extends Steg {
@@ -49,10 +54,15 @@ export class v1 extends Steg {
     return await this.pwcb();
   }
   async save(input) {
-    let img = this.img = new Image(), headmode = input.headmode||consts.HEADMODE, headmodeMask = input.headmodeMask||consts.HEADMODEMASK, { mode, modeMask, secs, dryrun, dryrunComp, rand, x = 0, y = 0, salt, maps, bufferMap } = input, verMajor = input.verMajor||this.#VERSION_MAJOR, verMinor = input.verMinor||this.#VERSION_MINOR;
+    let img = this.img = new Image(),
+        headmode = input.headmode || consts.HEADMODE,
+        headmodeMask = input.headmodeMask || consts.HEADMODEMASK,
+        { mode, modeMask, secs, dryrun, dryrunComp, rand, shuffle, x = 0, y = 0, salt, maps, bufferMap } = input,
+        verMajor = input.verMajor || this.#VERSION_MAJOR,
+        verMinor = input.verMinor || this.#VERSION_MINOR;
     if (verMajor != this.#VERSION_MAJOR) { throw new Error(`Trying to build a version ${verMajor}.x with a ${this.#VERSION_MAJOR}.x constructor`); }
     switch (verMinor) {
-      case 0: case 1: case 2: case 3: break;
+      case 0: case 1: case 2: case 3: case 4: break;
       default: throw new Error(`Trying to build an unsupported version ${verMajor}.${verMinor}`);
     }
     this.verMajor = verMajor;
@@ -61,30 +71,19 @@ export class v1 extends Steg {
     this.dryrunComp = dryrunComp;
     this.salt = salt;
     this.bufferMap = bufferMap || {};
+    this.useBufs = input.useBufs;
     if (dryrun) { print(Channels.NORMAL, 'DOING A DRY RUN! No changes to any images will be saved.'); if (!dryrunComp) { print(Channels.NORMAL, 'No files will be created or modified.'); } }
     headmode = fixMode(headmode);
     mode = fixMode(mode);
     print(Channels.VERBOSE, `Packing version ${verMajor}.${verMinor}...`);
     {
-      let { path, buffer, name, map, frame } = input.in, mapPath, mapName, mapBuffer;
-      if (map) {
-        mapPath = typeof map == 'string' ? map : map.path;
-        mapName = map.name;
-        mapBuffer = bufferMap ? bufferMap[map.name] : undefined;
-        map = { path: mapPath, name: mapName, buffer: mapBuffer };
-      }
+      let { path, buffer, name, map, frame } = input.in;
+      if (map) { map = { path: typeof map == 'string' ? map : map.path, name: map.name, buffer: bufferMap ? bufferMap[map.name] : undefined }; }
       if (typeof input.in == 'string') { path = input.in; }
       if ((bufferMap) && (bufferMap[name])) { buffer = bufferMap[name]; }
       await img.load({ path, buffer, name, map, frame });
     }
-    if (verMinor >= 2) { // remove for 1.4.0
-      let p = input.in.path || input.in;
-      if (typeof p == 'string') {
-        let bn = basename(p);
-        if ((maps) && (maps[bn])) { img.loadMap(maps[bn]); }
-        this.maps = maps;
-      }
-    } else {
+    if (verMinor < 2) {
       if (x !== 0) { x = 0; }
       if (y !== 0) { y = 0; }
     }
@@ -96,8 +95,9 @@ export class v1 extends Steg {
       img.setCursor(x, y);
       if (img.used[`${img.cursor.x},${img.cursor.y}`]) { img.advanceCursor(); }
     }
+    if (shuffle) { img.shuffle.seed = hashToDec(shuffle); }
     this.mode = mode;
-    if ((headmodeMask&0b111 == 0) && (headmode&consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (header)'); }
+    if ((headmodeMask & 0b111 == 0) && (headmode & consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (header)'); }
     img.setMode(headmode);
     img.setModeMask(headmodeMask);
     print(Channels.VERBOSE, 'Setting version...');
@@ -105,36 +105,38 @@ export class v1 extends Steg {
     img.writeInt(verMinor, 6);
     print(Channels.VERBOSE, 'Setting mode...');
     img.writeInt(mode, 6);
-    if ((headmodeMask&0b111 == 0) && (mode&consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (global)'); }
+    if ((headmodeMask & 0b111 == 0) && (mode & consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (global)'); }
     img.setMode(mode);
     print(Channels.VERBOSE, 'Setting settings...');
     this.alphaThresh = img.alphaThresh = bitsToAlpha(alphaToBits(input.alpha));
     switch (verMinor) {
-      case 0: img.writeBits(alphaToBits(this.alphaThresh)+'00000000000'); break;
-      case 1: case 2: img.writeBits(alphaToBits(this.alphaThresh)+pad(decToBin(modeMask), 3, '0')+'00000000'); break;
-      case 3: default: img.writeBits(alphaToBits(this.alphaThresh)+pad(decToBin(modeMask), 3, '0')); break;
+      case 0: img.writeBits(alphaToBits(this.alphaThresh) + '00000000000'); break;
+      case 1: case 2: img.writeBits(alphaToBits(this.alphaThresh) + pad(decToBin(modeMask), 3, '0') + '00000000'); break;
+      case 3: case 4: img.writeBits(alphaToBits(this.alphaThresh) + pad(decToBin(modeMask), 3, '0')); break;
     }
     if (headmodeMask != modeMask) { img.flush(); }
     this.master.modeMask = this.modeMask = modeMask;
     img.setModeMask(modeMask);
     print(Channels.VERBOSE, `Setting sec count (${secs.length})...`);
-    if (verMinor >= 2) { img.writeVLQ(secs.length, 4); }
-    else { img.writeInt(secs.length, 9); }
+    if (verMinor < 2) { img.writeInt(secs.length, 9); }
+    else { img.writeVLQ(secs.length, 4); }
     print(Channels.VERBOSE, 'Saving secs...');
     this.fullTable = {};
     for (let i = 0, l = secs.length; i < l; i++) {
-      if (!await this.#packSec(secs[i])) { throw new Error(`Unknown sec id ${sec.id}`); }
+      if (!await this.#packSec(secs[i])) { throw new Error(`Unknown sec id ${secs[i].id}`); }
     }
     let ret = await this.#saveImages(input.out);
-    print(Channels.NORMAL, `Number of pixels changed in ${input.out.path||input.out.name||input.out}: ${img.used.count} of ${img.width*img.height} (${Math.floor(img.used.count/(img.width*img.height)*10000)/100}%)`);
-    if (!input.keep) { // remove for 1.4.0
-      delete this.table;
-      delete this.fullTable;
-    }
+    print(Channels.NORMAL, `Number of pixels changed in ${input.out.path || input.out.name || input.out}: ${img.used.count} of ${img.width * img.height} (${Math.floor(img.used.count / (img.width * img.height) * 10000) / 100}%)`);
+    delete this.table;
+    delete this.fullTable;
     return ret;
   }
   async load(input) {
-    let img = this.img = new Image(), headmode = input.headmode||consts.HEADMODE, headmodeMask = input.headmodeMask||consts.HEADMODEMASK, { in: image, rand, modeMask, x, y, salt, maps, bufferMap } = input, v, verMajor, verMinor, mode, secCount, ret;
+    let img = this.img = new Image(),
+        headmode = input.headmode || consts.HEADMODE,
+        headmodeMask = input.headmodeMask || consts.HEADMODEMASK,
+        { in: image, rand, shuffle, modeMask, x, y, salt, maps, bufferMap } = input,
+        v, verMajor, verMinor, mode, secCount, ret;
     let usingInitPos = x !== undefined || y !== undefined;
     x = x !== undefined ? x : 0; y = y !== undefined ? y : 0;
     this._files = [];
@@ -142,20 +144,15 @@ export class v1 extends Steg {
     this._texts = [];
     this.fullTable = {};
     this.bufferMap = bufferMap || {};
+    this.useBufs = input.useBufs;
     {
-      let { path, buffer, name, map, frame } = image, mapPath, mapName, mapBuffer;
-      if (map) {
-        mapPath = typeof map == 'string' ? map : map.path;
-        mapName = map.name;
-        mapBuffer = bufferMap ? bufferMap[map.name] : undefined;
-        map = { path: mapPath, name: mapName, buffer: mapBuffer };
-      }
+      let { path, buffer, name, map, frame } = image;
+      if (map) { map = { path: typeof map == 'string' ? map : map.path, name: map.name, buffer: bufferMap ? bufferMap[map.name] : undefined }; }
       if (typeof image == 'string') { path = image; }
       if ((bufferMap) && (bufferMap[name])) { buffer = bufferMap[name]; }
       await img.load({ path, buffer, name, map, frame });
     }
     if (!img.check()) { throw new Error(`Error loading ${image}: Not lossless`); }
-    if (maps) { let bn = basename(image); if (maps[bn]) { img.loadMap(maps[bn]); } } // remove for 1.4.0
     img.master = this.master = img;
     this.master.modeMask = this.modeMask = headmodeMask;
     img.state.pws = input.pws || [];
@@ -164,8 +161,9 @@ export class v1 extends Steg {
       img.setCursor(x, y);
       if (img.used[`${img.cursor.x},${img.cursor.y}`]) { img.advanceCursor(); }
     }
+    if (shuffle) { img.shuffle.seed = hashToDec(rand); }
     headmode = fixMode(headmode);
-    if ((headmodeMask&0b111 == 0) && (headmode&consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (header)'); }
+    if ((headmodeMask & 0b111 == 0) && (headmode & consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (header)'); }
     img.setMode(headmode);
     img.setModeMask(headmodeMask);
     print(Channels.VERBOSE, 'Unpacking...\nReading version...');
@@ -176,7 +174,7 @@ export class v1 extends Steg {
     }
     verMinor = img.readInt(6);
     switch (verMinor) {
-      case 0: case 1: case 2: case 3: break;
+      case 0: case 1: case 2: case 3: case 4: break;
       default: throw new Error(`Unsupported version ${verMajor}.${verMinor}`);
     }
     print(Channels.VVERBOSE, `Got version ${verMajor}.${verMinor}`);
@@ -190,7 +188,7 @@ export class v1 extends Steg {
     print(Channels.VERBOSE, 'Reading mode...');
     mode = this.mode = img.readInt(6);
     print(Channels.VVERBOSE, `Got mode ${mode}`);
-    if ((headmodeMask&0b111 == 0) && (mode&consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (global)'); }
+    if ((headmodeMask & 0b111 == 0) && (mode & consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (global)'); }
     img.setMode(mode);
     print(Channels.VERBOSE, 'Reading settings...');
     switch (verMinor) {
@@ -217,8 +215,8 @@ export class v1 extends Steg {
     img.setModeMask(this.modeMask);
     if (headmodeMask != this.modeMask) { img.clear(); }
     print(Channels.VERBOSE, 'Reading sec count...');
-    if (verMinor >= 2) { secCount = img.readVLQ(4); }
-    else { secCount = img.readBits(9); }
+    if (verMinor < 2) { secCount = img.readBits(9); }
+    else { secCount = img.readVLQ(4); }
     print(Channels.VVERBOSE, `Got count ${secCount}`);
     for (let i = 0; i < secCount; i++) {
       ret = await this.#readSec();
@@ -232,14 +230,13 @@ export class v1 extends Steg {
     if (index == this.imageIndex) { return false; }
     let i = this.table[index];
     if (!i.img.loaded) {
-      let input = i.input || { name: i.name, path: i.path }, p = input.path || input.name || input, mapIn = i.mapIn;
+      let input = i.input || { name: i.name, path: i.path }, p = input.path || input.name || input, { mapIn } = i;
       if (this.bufferMap[input.name]) { i.buffer = this.bufferMap[input.name]; }
       if ((this.verMinor >= 2) && (mapIn) && (this.bufferMap[mapIn.name || mapIn])) { mapIn = { name: mapIn.name || mapIn, buffer: this.bufferMap[mapIn.name || mapIn] }; }
       await i.img.load({ path: i.buffer ? undefined : p, buffer: i.buffer, name: basename(p), map: mapIn, frame: i.frame });
       if ((!this.master.writing) && (!i.img.check())) { throw new Error(`Error loading ${i.name}: Not lossless`); }
-      if ((this.verMinor >= 2) && (this.maps) && (this.maps[input.name])) { i.img.loadMap(this.maps[input.name]); } // remove for 1.4.0
     }
-    print(Channels.VERBOSE, `Switching to ${i.name}${i.frame?' frame '+i.frame:''}...`);
+    print(Channels.VERBOSE, `Switching to ${i.name}${i.frame ? ' frame ' + i.frame : ''}...`);
     if (this.img == i.img) { return false; }
     if (this.master.writing) { this.img.flush(); }
     else { this.img.clear(); }
@@ -254,22 +251,18 @@ export class v1 extends Steg {
   async #saveImages(o) {
     let out = [], outmap = {}, img, t;
     let f = async ({ path, map: _map, mapOut, buffer, name, frame }, img, o = undefined) => {
-      let map = mapOut || _map, mapPath, mapName, mapBuffer;
+      let map = mapOut || _map;
       let s = typeof o === 'string' ? { path: o } : { img, path, mapOut: map, buffer, name, frame };
       img.flush();
       await img.save(s);
       if (typeof o === 'string') { out.push({ path: o, img }); }
       else if (!outmap[path || name || o]) {
-        if (map) {
-          mapPath = typeof map == 'string' ? map : map.path;
-          mapName = map.name;
-          mapBuffer = map.buffer ? img.mapBuffer : undefined;
-        }
-        out.push({ path, map: { path: mapPath, name: mapName, buffer: mapBuffer }, buffer: img.buffer, name, frame });
+        if (map) { map = { path: typeof map == 'string' ? map : map.path, name: map.name, buffer: map.buffer ? img.mapBuffer : undefined }; }
+        out.push({ path, map, buffer: img.buffer, name, frame });
         outmap[path || name || o] = true;
       }
     };
-    if (!this.dryrun) { await f(o, this.master, o); }
+    if ((!this.dryrun) && (o)) { await f(o, this.master, o); }
     for (let i = 0, { fullTable } = this, keys = Object.keys(fullTable), l = keys.length; i < l; i++) {
       t = fullTable[keys[i]];
       img = t.img;
@@ -283,7 +276,7 @@ export class v1 extends Steg {
   #prepFilePack(comp, crypt, text) {
     let { master } = this, fmods = []
     if ((comp) && (master.state.compress) && (master.state.compress.type)) {
-      print(Channels.VERBOSE, `Need to compress ${text?'text':'file'}...`);
+      print(Channels.VERBOSE, `Need to compress ${text ? 'text' : 'file'}...`);
       let com = master.state.compress;
       switch (com.type) {
         case consts.COMP_GZIP: fmods.push(gzip(com.level)); break;
@@ -292,7 +285,7 @@ export class v1 extends Steg {
       }
     }
     if ((crypt) && (master.state.encrypt) && (master.state.encrypt.type)) {
-      print(Channels.VERBOSE, `Need to encrypt ${text?'text':'file'}...`);
+      print(Channels.VERBOSE, `Need to encrypt ${text ? 'text' : 'file'}...`);
       let enc = master.state.encrypt;
       switch (enc.type) {
         case consts.CRYPT_AES256: fmods.push(cryptaes256(enc.key, enc.iv)); break;
@@ -308,7 +301,7 @@ export class v1 extends Steg {
   #prepFileUnpack(comp, crypt, text) {
     let { master } = this, fmods = [];
     if ((crypt) && (master.state.encrypt) && (master.state.encrypt.type)) {
-      print(Channels.VERBOSE, `Need to decrypt ${text?'text':'file'}...`);
+      print(Channels.VERBOSE, `Need to decrypt ${text ? 'text' : 'file'}...`);
       let enc = master.state.encrypt;
       switch (enc.type) {
         case consts.CRYPT_AES256: fmods.push(decryptaes256(enc.key, enc.iv)); break;
@@ -320,7 +313,7 @@ export class v1 extends Steg {
       }
     }
     if ((comp) && (master.state.compress) && (master.state.compress.type)) {
-      print(Channels.VERBOSE, `Need to decompress ${text?'text':'file'}...`);
+      print(Channels.VERBOSE, `Need to decompress ${text ? 'text' : 'file'}...`);
       let com = master.state.compress;
       switch (com.type) {
         case consts.COMP_GZIP: fmods.push(gunzip()); break;
@@ -337,6 +330,7 @@ export class v1 extends Steg {
     o.buf = img.buf;
     o.cursor = { x: img.cursor.x, y: img.cursor.y };
     o.rand = img.state.rand ? img.state.rand.state : master.rand.seed != -1 ? master.rand.state : undefined;
+    o.shuffle = img.state.shuffle ? img.state.shuffle.state : master.shuffle.seed != -1 ? master.shuffle.state : undefined;
     o.rect = img.state.rect;
     o.enc = master.state.encrypt;
     o.com = master.state.compress;
@@ -346,19 +340,21 @@ export class v1 extends Steg {
     o.used = used;
   }
   #loadState(state) {
-    let { img, master } = state;
+    let { img, master } = state, used = {};
     print(Channels.VERBOSE, 'Loading state...');
     img.master = master;
     img.buf = state.buf;
-    img.cursor = state.cursor;
+    img.cursor = { x: state.cursor.x, y: state.cursor.y };
     master.rand.seed = -1;
     img.state.rand = state.rand ? new randr(state.rand) : undefined;
+    img.state.shuffle = state.shuffle ? new randr(state.shuffle) : undefined;
     img.state.rect = state.rect;
     master.state.encrypt = state.enc;
     master.state.compress = state.com;
     img.mode = master.state.mode = state.mode;
     img.alphaThresh = state.alpha;
-    img.used = state.used;
+    for (let i = 0, u = state.used, keys = Object.keys(u), l = keys.length; i < l; i++) { used[keys[i]] = u[keys[i]]; }
+    img.used = used;
   }
   async #packSec(sec) {
     let { img } = this;
@@ -378,39 +374,41 @@ export class v1 extends Steg {
       case consts.SEC_ALPHA: await this.#packSecAlpha(sec); break;
       case consts.SEC_TEXT: await this.#packSecText(sec); break;
       case consts.SEC_MODEMASK: if (this.verMinor < 1) { return false; } await this.#packSecModeMask(sec); break;
+      case consts.SEC_SHUFFLE: if (this.verMinor < 4) { return false; } await this.#packSecShuffle(sec); break;
       default: return false;
     }
     return true;
   }
   async #packSecFile(sec) {
-    let { img } = this, p = sec.path, s;
+    let { img } = this, p = sec.path, isBuf = typeof p !== 'string', s, b;
     if ((!this.dryrun) || (this.dryrunComp)) {
       let fmods = this.#prepFilePack(!sec.compressed, true);
-      if (fmods.length) { await copyf(p, p = 'tmp/tmp', fmods); }
+      if (fmods.length) { p = await copyf(p, isBuf || this.useBufs ? null : 'tmp/tmp', fmods); }
     }
-    sec.len = fs.statSync(p).size;
+    p = new fileReader(p);
+    sec.len = p.size;
     print(Channels.VERBOSE, `Packing SEC_FILE...\nPacking length (${sec.len})...`);
-    if (this.verMinor >= 2) { img.writeVLQ(sec.len, 8); }
-    else { img.writeInt(sec.len, 24); }
+    if (this.verMinor < 2) { img.writeInt(sec.len, 24); }
+    else { img.writeVLQ(sec.len, 8); }
     print(Channels.VERBOSE, 'Packing file name...');
-    img.writeString(sec.newName||basename(sec.path));
+    img.writeString(b = isBuf ? sec.newName : sec.newName || basename(sec.path));
     print(Channels.VERBOSE, 'Packing file...');
     if (this.dryrun) {
       if (!this.dryrunComp) {
-        if ((sec.compressed) || (this.master.state.compress)) { print(Channels.NORMAL, `Warning: Compression is active on file "${p}" during a dry-run. Using uncompressed size. Dry-run may fail when it otherwise would not as compressed size is unpredictable.`); }
+        if ((sec.compressed) || (this.master.state.compress)) { print(Channels.NORMAL, `Warning: Compression is active on file "${b}" during a dry-run. Using uncompressed size. Dry-run may fail when it otherwise would not as compressed size is unpredictable.`); }
       }
       s = sec.len;
       while (s > 0) { img.writeBits('00000000'); s--; }
     } else {
-      let k = Buffer.alloc(1024), fd, r;
-      fd = fs.openSync(p, 'r');
+      let r, k;
       if (!debug()) { print(Channels.VERBOSE, 'Processing...'); }
-      while (r = fs.readSync(fd, k, 0, 900)) {
+      while (r = await p.readBytes(900)) {
         s = '';
+        k = r.buffer;
+        r = r.bytesRead;
         for (let i = 0; i < r; i++) { s += pad(decToBin(k[i]), 8, '0'); }
         img.writeBits(s);
       }
-      fs.closeSync(fd);
     }
     if (fs.existsSync('tmp/tmp')) { fs.unlinkSync('tmp/tmp'); }
   }
@@ -494,19 +492,19 @@ export class v1 extends Steg {
     let { img } = this;
     if (sec.rem) { print(Channels.VERBOSE, 'Clearing SEC_RECT...'); delete img.state.rect; return; }
     print(Channels.VERBOSE, 'Packing SEC_RECT...\nPacking x, y, w, h...');
-    if (this.verMinor >= 2) {
-      img.writeVLQ(sec.x, 8);
-      img.writeVLQ(sec.y, 8);
-      img.writeVLQ(sec.w, 8);
-      img.writeVLQ(sec.h, 8);
-    } else {
+    if (this.verMinor < 2) {
       img.writeInt(sec.x, 16);
       img.writeInt(sec.y, 16);
       img.writeInt(sec.w, 16);
       img.writeInt(sec.h, 16);
+    } else {
+      img.writeVLQ(sec.x, 8);
+      img.writeVLQ(sec.y, 8);
+      img.writeVLQ(sec.w, 8);
+      img.writeVLQ(sec.h, 8);
     }
     img.flush();
-    img.state.rect = { x: sec.x, y: sec.y, w: sec.w, h: sec.h, max: sec.w*sec.h };
+    img.state.rect = { x: sec.x, y: sec.y, w: sec.w, h: sec.h, max: sec.w * sec.h };
     img.resetCursor(true);
   }
   async #packSecCursor(sec) {
@@ -535,12 +533,12 @@ export class v1 extends Steg {
           case 2: default: img.writeVLQ(sec.index, 4); break;
         }
         print(Channels.VERBOSE, 'Packing x, y...');
-        if (this.verMinor >= 2) {
-          img.writeVLQ(sec.x, 8);
-          img.writeVLQ(sec.y, 8);
-        } else {
+        if (this.verMinor < 2) {
           img.writeInt(sec.x, 16);
           img.writeInt(sec.y, 16);
+        } else {
+          img.writeVLQ(sec.x, 8);
+          img.writeVLQ(sec.y, 8);
         }
         img.flush();
         await this.#switchImage(sec.index);
@@ -612,7 +610,51 @@ export class v1 extends Steg {
     if (!sec.pw) { sec.pw = await this.#requestPassword(); }
     switch (this.verMinor) {
       case 0: enc.key = getMD5Key(sec.pw); break;
-      default: enc.key = await getCryptKey(sec.pw, getSalt(this.verMajor, this.verMinor, this.salt)); break;
+      case 1: case 2: case 3: enc.key = await getCryptKeyPBKDF2(sec.pw, getSalt(this.verMajor, this.verMinor, this.salt)); break;
+      default:
+        switch (sec.kdf) {
+          case consts.KDF_ARGON2I: case consts.KDF_ARGON2D: case consts.KDF_ARGON2ID:
+            {
+              let arg = (n) => { return sec.adv ? sec[n] : undefined; };
+              let { hash, salt } = await getCryptKeyArgon2(sec.kdf, sec.pw, undefined, getSalt(this.verMajor, this.verMinor, this.salt, true), arg('memoryCost'), arg('timeCost'), arg('parallelism'));
+              enc.key = hash;
+              enc.salt = salt;
+            }
+            break;
+          case consts.KDF_PBKDF2:
+            enc.key = await getCryptKeyPBKDF2(sec.pw, getSalt(this.verMajor, this.verMinor, this.salt), 'sha512', sec.adv ? sec.iterations : 1000000);
+            break;
+        }
+        break;
+    }
+    if (this.verMinor >= 4) {
+      print(Channels.VERBOSE, 'Packing KDF...');
+      img.writeInt(sec.kdf, 2);
+      print(Channels.VERBOSE, 'Packing advanced setting flag...');
+      img.writeInt(sec.adv ? 1 : 0, 1);
+      switch (sec.kdf) {
+        case consts.KDF_ARGON2I: case consts.KDF_ARGON2D: case consts.KDF_ARGON2ID:
+          print(Channels.VERBOSE, 'Packing Argon2 salt...');
+          for (let i = 0; i < 16; i++) { img.writeInt(enc.salt[i], 8); }
+          break;
+        default: break;
+      }
+      if (sec.adv) {
+        switch (sec.kdf) {
+          case consts.KDF_ARGON2I: case consts.KDF_ARGON2D: case consts.KDF_ARGON2ID:
+            print(Channels.VERBOSE, 'Packing Argon2 advanced settings...\nPacking memory cost...');
+            img.writeVLQ(sec.memoryCost, 8);
+            print(Channels.VERBOSE, 'Packing time cost...');
+            img.writeVLQ(sec.timeCost, 8);
+            print(Channels.VERBOSE, 'Packing parallelism...');
+            img.writeVLQ(sec.parallelism, 8);
+            break;
+          case consts.KDF_PBKDF2:
+            print(Channels.VERBOSE, 'Packing PBKDF2 advanced settings...\nPacking iterations...');
+            img.writeVLQ(sec.iterations, 8);
+            break;
+        }
+      }
     }
     enc.iv = generateIV();
     print(Channels.VERBOSE, 'Packing type...');
@@ -622,39 +664,41 @@ export class v1 extends Steg {
     master.state.encrypt = enc;
   }
   async #packSecPartialFile(sec) {
-    let { img, master } = this, table = master.state.partialTable, p = sec.path;
+    let { img, master } = this, table = master.state.partialTable, p = sec.path, isBuf = typeof p !== 'string', b, f;
     if (!table) { table = master.state.partialTable = {}; }
+    b = isBuf ? sec.newName : sec.newName || basename(sec.path);
     if ((this.dryrun) && (!this.dryrunComp)) {
-      if ((sec.compressed) || (this.master.state.compress)) { print(Channels.NORMAL, `Warning: Compression is active on partial file "${p}" during a dry-run. Using uncompressed size. Dry-run may fail when it otherwise would not as compressed size is unpredictable.`); }
+      if ((sec.compressed) || (this.master.state.compress)) { print(Channels.NORMAL, `Warning: Compression is active on partial file "${b}" during a dry-run. Using uncompressed size. Dry-run may fail when it otherwise would not as compressed size is unpredictable.`); }
     } else {
       let fmods = this.#prepFilePack(!sec.compressed, true);
-      if (fmods.length) { await copyf(p, p = `tmp/${sec.index}`, fmods); }
+      if (fmods.length) { p = await copyf(p, isBuf || this.useBufs ? null : `tmp/${sec.index}`, fmods); }
     }
-    let f = table[sec.index] = { size: fs.statSync(p).size, fd: fs.openSync(p, 'r'), pieces: 0, written: 0 };
+    f = new fileReader(p);
+    f = table[sec.index] = { size: f.size, fd: f, pieces: 0, written: 0 };
     print(Channels.VERBOSE, `Packing SEC_PARTIALFILE...\nPacking size (${f.size})...`);
-    if (this.verMinor >= 2) { img.writeVLQ(f.size, 8); }
-    else { img.writeInt(f.size, 24); }
+    if (this.verMinor < 2) { img.writeInt(f.size, 24); }
+    else { img.writeVLQ(f.size, 8); }
     print(Channels.VERBOSE, 'Packing file name...');
-    img.writeString(sec.newName||basename(sec.path));
+    img.writeString(b);
     print(Channels.VERBOSE, 'Packing file index...');
-    if (this.verMinor >= 2) { img.writeVLQ(sec.index, 4); }
-    else { img.writeInt(sec.index, 8); }
+    if (this.verMinor < 2) { img.writeInt(sec.index, 8); }
+    else { img.writeVLQ(sec.index, 4); }
   }
   async #packSecPartialFilePiece(sec) {
-    let { img, master } = this, f = master.state.partialTable[sec.index], w = 0, s;
-    if ((!sec.size) || (sec.size > f.size-f.written)) { sec.size = f.size - f.written; sec.last = true; }
+    let { img, master } = this, f = master.state.partialTable[sec.index], { fd } = f, w = 0, s;
+    if ((!sec.size) || (sec.size > f.size - f.written)) { sec.size = f.size - f.written; sec.last = true; }
     if (f.done) { sec.size = 0; }
     print(Channels.VERBOSE, 'Packing SEC_PARTIALFILEPIECE...\nPacking file index...');
-    if (this.verMinor >= 2) { img.writeVLQ(sec.index, 4); }
-    else { img.writeInt(sec.index, 8); }
+    if (this.verMinor < 2) { img.writeInt(sec.index, 8); }
+    else { img.writeVLQ(sec.index, 4); }
     print(Channels.VERBOSE, 'Packing piece index...');
-    if (this.verMinor >= 2) { img.writeVLQ(f.pieces++, 4); }
-    else { img.writeInt(f.pieces++, 8); }
+    if (this.verMinor < 2) { img.writeInt(f.pieces++, 8); }
+    else { img.writeVLQ(f.pieces++, 4); }
     print(Channels.VERBOSE, 'Packing last piece flag...');
     img.writeInt(sec.last || f.done ? 1 : 0, 1);
     print(Channels.VERBOSE, 'Packing piece size...');
-    if (this.verMinor >= 2) { img.writeVLQ(sec.size, 8); }
-    else { img.writeInt(sec.size, 24); }
+    if (this.verMinor < 2) { img.writeInt(sec.size, 24); }
+    else { img.writeVLQ(sec.size, 8); }
     print(Channels.VERBOSE, 'Packing piece...');
     if (sec.size > 0) {
       if (this.dryrun) {
@@ -662,17 +706,21 @@ export class v1 extends Steg {
         while (s > 0) { img.writeBits('00000000'); s--; }
         if (sec.last) { f.done = true; if ((this.dryrunComp) && (fs.existsSync(`tmp/${sec.index}`))) { fs.unlinkSync(`tmp/${sec.index}`); } }
       } else {
-        let k = Buffer.alloc(1024), v = Math.min(900, sec.size), r;
+        let v = Math.min(900, sec.size), x = sec.size, r, k;
         if (!debug()) { print(Channels.VERBOSE, 'Processing...'); }
-        while (r = fs.readSync(f.fd, k, 0, v)) {
+        while ((x > 0) && (r = await fd.readBytes(v))) {
+          k = r.buffer;
+          r = r.bytesRead;
+          s = '';
           for (let i = 0; i < r; i++) { s += pad(decToBin(k[i]), 8, '0'); }
           img.writeBits(s);
+          x -= r;
           w += r;
           f.written += r;
           if (w+v > sec.size) { v = sec.size-w; }
         }
         if (sec.last) {
-          fs.closeSync(f.fd);
+          fd.close();
           f.done = true;
           if (fs.existsSync(`tmp/${sec.index}`)) { fs.unlinkSync(`tmp/${sec.index}`); }
         }
@@ -689,7 +737,7 @@ export class v1 extends Steg {
       return;
     }
     m = fixMode(m);
-    if ((modeMask&0b111 == 0) && (sec.mode&consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (sec)'); }
+    if ((modeMask & 0b111 == 0) && (sec.mode & consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (sec)'); }
     print(Channels.VERBOSE, 'Packing SEC_MODE...\nPacking mode...');
     img.writeInt(m, 6);
     img.flush();
@@ -710,8 +758,10 @@ export class v1 extends Steg {
   async #packSecText(sec) {
     let { img } = this, { text, honor } = sec, fmods, buf;
     print(Channels.VERBOSE, 'Packing SEC_TEXT...\nPacking honor mask...');
-    img.writeInt(honor, 4);
-    fmods = this.#prepFilePack(honor & consts.TEXT_HONOR_COMPRESSION, honor & consts.TEXT_HONOR_ENCRYPTION, true)
+    if (this.verMinor < 4) { img.writeInt(honor, 4); }
+    else { img.writeInt(honor, 2); }
+    if (this.verMinor < 4) { fmods = this.#prepFilePack(honor & consts.TEXT_HONOR_COMPRESSION_DEP, honor & consts.TEXT_HONOR_ENCRYPTION_DEP, true); }
+    else { fmods = this.#prepFilePack(honor & consts.TEXT_HONOR_COMPRESSION, honor & consts.TEXT_HONOR_ENCRYPTION, true); }
     if (fmods.length) {
       let b = fmods[0], st = b, bufs = [];
       for (let i = 1, l = fmods.length; i < l; i++) { b.pipe(fmods[i]); b = fmods[i]; }
@@ -722,8 +772,8 @@ export class v1 extends Steg {
       buf = Buffer.concat(bufs);
     } else { buf = Buffer.from(text, 'binary'); }
     print(Channels.VERBOSE, `Packing text length (${buf.length})...`);
-    if (this.verMinor >= 2) { img.writeVLQ(buf.length, 8); }
-    else { img.writeInt(buf.length, 16); }
+    if (this.verMinor < 2) { img.writeInt(buf.length, 16); }
+    else { img.writeVLQ(buf.length, 8); }
     print(Channels.VERBOSE, 'Packing text...');
     for (let i = 0, l = buf.length; i < l; i++) { img.writeInt(buf[i], 8); }
   }
@@ -737,11 +787,21 @@ export class v1 extends Steg {
       return;
     }
     m = master.state.mode ? master.state.mode : mode;
-    if ((sec.mask&0b111 == 0) && (m&consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (sec)'); }
+    if ((sec.mask & 0b111 == 0) && (m & consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (sec)'); }
     print(Channels.VERBOSE, 'Packing SEC_MODEMASK...\nPacking mask...');
     img.writeInt(sec.mask, 3);
     img.flush();
     img.setModeMask(master.state.modeMask = sec.mask);
+  }
+  async #packSecShuffle(sec) {
+    let { img } = this, s;
+    if (sec.rem) { print(Channels.VERBOSE, 'Clearing SEC_SHUFFLE...'); delete img.state.shuffle; return; }
+    print(Channels.VERBOSE, 'Packing SEC_SHUFFLE...\nPacking seed...');
+    s = pad(decToBin(hashToDec(sec.seed)).substr(0, 32), 32, '0');
+    img.writeBits(s);
+    img.flush();
+    if (!img.state.shuffle) { img.state.shuffle = new randr(); }
+    img.state.shuffle.seed = binToDec(s);
   }
   async #readSec() {
     let { img } = this, secId, rem;
@@ -750,8 +810,8 @@ export class v1 extends Steg {
     secId = img.readInt(9);
     print(Channels.VVERBOSE, `Got id ${secId}`);
     print(Channels.VERBOSE, 'Reading sec...');
-    rem = secId&(1<<8);
-    secId = secId&255;
+    rem = secId & (1 << 8);
+    secId = secId & 255;
     switch (secId) {
       case consts.SEC_FILE: await this.#readSecFile(rem); break;
       case consts.SEC_RAND: await this.#readSecRand(rem); break;
@@ -766,6 +826,7 @@ export class v1 extends Steg {
       case consts.SEC_ALPHA: await this.#readSecAlpha(rem); break;
       case consts.SEC_TEXT: await this.#readSecText(rem); break;
       case consts.SEC_MODEMASK: if (this.verMinor < 1) { return err(secId); } await this.#readSecModeMask(rem); break;
+      case consts.SEC_SHUFFLE: if (this.verMinor < 4) { return err(secId); } await this.#readSecShuffle(rem); break;
       default: return err(secId);
     }
     return { v: true };
@@ -773,8 +834,8 @@ export class v1 extends Steg {
   async #readSecFile(rem) {
     let { img, master } = this, o = {}, s = 0;
     print(Channels.VERBOSE, 'Reading SEC_FILE...\nReading size...');
-    if (this.verMinor >= 2) { o.size = img.readVLQ(8); }
-    else { o.size = img.readInt(24); }
+    if (this.verMinor < 2) { o.size = img.readInt(24); }
+    else { o.size = img.readVLQ(8); }
     print(Channels.VVERBOSE, `Got size ${o.size}`);
     print(Channels.VERBOSE, 'Reading name...');
     o.name = img.readString();
@@ -786,29 +847,33 @@ export class v1 extends Steg {
     this._files.push(new v1File(this, o));
   }
   async unpackFile(file, output = './extracted') {
-    let { state } = file, { img, size } = state, s = 0, r = Buffer.alloc(1), fd, path, p, fmods;
+    let { state } = file, { img, size } = state, s = 0, r = Buffer.alloc(1), fd, path, fpath, p, fmods;
     this.#loadState(state);
+    fmods = this.#prepFileUnpack(!!state.com, !!state.enc);
     print(Channels.NORMAL, `Extracting ${file.state.name}...`);
-    path = normalize(`${output}/${file.state.name}`).replace(/^\.\.\/(\.\.\/)*/g, '');
-    fs.mkdirSync(dirname(path), { recursive: true });
-    fd = fs.openSync(path, 'w');
+    if (output == null) { path = fpath = null; }
+    else {
+      path = fpath = normalize(`${output}/${file.state.name}`).replace(/^\.\.\/(\.\.\/)*/g, '');
+      fs.mkdirSync(dirname(fpath), { recursive: true });
+      if (fmods.length) { path = this.useBufs ? null : 'tmp/tmp'; }
+    }
+    fd = new fileWriter(path);
     while (s < size) {
       r[0] = img.readInt(8);
-      fs.writeSync(fd, r);
+      fd.writeBytes(Buffer.from(r));
       s++;
       if (!debug()) { process.stdout.write(`\rSaved ${s} of ${size}            `); }
     }
     if (!debug()) { process.stdout.write('\n'); }
-    fs.closeSync(fd);
-    fmods = this.#prepFileUnpack(!!state.com, !!state.enc);
+    s = await fd.commit();
     if (fmods.length) {
       if (!debug()) { print(Channels.VERBOSE, 'Processing...'); }
-      await copyf(path, p = 'tmp/tmp', fmods);
-      fs.unlinkSync(path);
-      fs.renameSync(p, path);
+      p = await copyf(s ? s : path, fpath, fmods);
+      if (!s) { fs.unlinkSync(path); } else { s = p; }
     }
-    state.realSize = fmods.length ? fs.statSync(path).size : size;
+    state.realSize = fmods.length ? (fpath == null ? s.length : fs.statSync(fpath).size) : size;
     if ((!debug()) && (state.realSize != size)) { print(Channels.NORMAL, `Processed size: ${state.realSize}`); }
+    return fpath == null ? s : undefined;
   }
   async #readSecRand(rem) {
     let { img, master } = this, seed;
@@ -856,8 +921,8 @@ export class v1 extends Steg {
         if (hasFrame) { frame = img.readVLQ(4); }
         if (hasMap) { map = img.readString(); }
         v = img.readString();
-        bn = v+(hasFrame ? `-${frame}` : '');
-        print(Channels.VERBOSE, `Got hasFrame ${hasFrame} hasMap ${hasMap}${hasFrame ? ' frame '+frame : ''}${hasMap ? ' map '+map : ''} name ${v}`);
+        bn = v + (hasFrame ? `-${frame}` : '');
+        print(Channels.VERBOSE, `Got hasFrame ${hasFrame} hasMap ${hasMap}${hasFrame ? ' frame ' + frame : ''}${hasMap ? ' map ' + map : ''} name ${v}`);
         if (fullTable[bn]) { table.push(fullTable[bn]); continue; }
         table.push(z = fullTable[bn] = { name: v, frame, mapIn: map });
         if ((hasFrame) && (basename(img.src) == v) && (img.frame == frame)) { z.img = img; }
@@ -873,16 +938,16 @@ export class v1 extends Steg {
     let { img } = this, rect = {};
     if (rem) { print(Channels.VERBOSE, 'Clearing SEC_RECT...'); delete img.state.rect; return; }
     print(Channels.VERBOSE, 'Reading SEC_RECT...\nReading x, y, w, h...');
-    if (this.verMinor >= 2) {
-      rect.x = img.readVLQ(8);
-      rect.y = img.readVLQ(8);
-      rect.w = img.readVLQ(8);
-      rect.h = img.readVLQ(8);
-    } else {
+    if (this.verMinor < 2) {
       rect.x = img.readInt(16);
       rect.y = img.readInt(16);
       rect.w = img.readInt(16);
       rect.h = img.readInt(16);
+    } else {
+      rect.x = img.readVLQ(8);
+      rect.y = img.readVLQ(8);
+      rect.w = img.readVLQ(8);
+      rect.h = img.readVLQ(8);
     }
     img.clear();
     print(Channels.VVERBOSE, `Got x, y, w, h of ${rect.x}, ${rect.y}, ${rect.w}, ${rect.h}`);
@@ -916,8 +981,8 @@ export class v1 extends Steg {
         }
         print(Channels.VVERBOSE, `Got index ${ind}`);
         print(Channels.VERBOSE, 'Reading x, y...');
-        if (this.verMinor >= 2) { x = img.readVLQ(8); y = img.readVLQ(8); }
-        else { x = img.readInt(16); y = img.readInt(16); }
+        if (this.verMinor < 2) { x = img.readInt(16); y = img.readInt(16); }
+        else { x = img.readVLQ(8); y = img.readVLQ(8); }
         print(Channels.VVERBOSE, `Got x, y of ${x}, ${y}`);
         img.clear();
         await this.#switchImage(ind);
@@ -926,8 +991,8 @@ export class v1 extends Steg {
           let { rect } = img.state;
           x += rect.x;
           y += rect.y;
-          if ((x < rect.x) || (x >= rect.x+rect.w) ||
-              (y < rect.y) || (y >= rect.y+rect.h)) { throw new Error('SEC_CURSOR movement out of SEC_RECT bounds'); }
+          if ((x < rect.x) || (x >= rect.x + rect.w) ||
+              (y < rect.y) || (y >= rect.y + rect.h)) { throw new Error('SEC_CURSOR movement out of SEC_RECT bounds'); }
         }
         img.cursor.x = x;
         img.cursor.y = y;
@@ -971,9 +1036,60 @@ export class v1 extends Steg {
     master.state.compress = com;
   }
   async #readSecEncrypt(rem) {
-    let { img, master } = this, enc = {};
+    let { img, master } = this, enc = {}, pw;
     if (rem) { print(Channels.VERBOSE, 'Clearing SEC_ENCRYPTION...'); delete master.state.encrypt; return; }
-    print(Channels.VERBOSE, 'Reading SEC_ENCRYPTION...\nReading type...');
+    let arg = (n, d = undefined) => { return enc.adv ? enc[n] : d; };
+    print(Channels.VERBOSE, 'Reading SEC_ENCRYPTION...\n');
+    if (master.state.pws.length) { pw = master.state.pws.shift(); }
+    else { pw = await this.#requestPassword(); }
+    switch (this.verMinor) {
+      case 0:
+        enc.key = getMD5Key(pw);
+        break;
+      case 1: case 2: case 3:
+        enc.key = await getCryptKeyPBKDF2(pw, getSalt(this.verMajor, this.verMinor, this.salt));
+        break;
+      default:
+        print(Channels.VERBOSE, 'Reading KDF...');
+        enc.kdf = img.readInt(2);
+        print(Channels.VVERBOSE, `Got KDF ${enc.kdf}`);
+        print(Channels.VERBOSE, 'Reading advanced settings flag...');
+        enc.adv = img.readInt(1);
+        print(Channels.VVERBOSE, `Got ${enc.adv}`);
+        switch (enc.kdf) {
+          case consts.KDF_ARGON2I: case consts.KDF_ARGON2D: case consts.KDF_ARGON2ID:
+            {
+              let salt = Buffer.alloc(16), argon2;
+              print(Channels.VERBOSE, 'Reading salt...');
+              for (let i = 0; i < 16; i++) { salt[i] = img.readInt(8); }
+              print(Channels.VVERBOSE, `Got salt ${salt.toString('hex')}`);
+              if (enc.adv) {
+                print(Channels.VERBOSE, 'Reading memory cost...');
+                enc.memoryCost = img.readVLQ(8);
+                print(Channels.VVERBOSE, `Got ${enc.memoryCost}`);
+                print(Channels.VERBOSE, 'Reading time cost...');
+                enc.timeCost = img.readVLQ(8);
+                print(Channels.VVERBOSE, `Got ${enc.timeCost}`);
+                print(Channels.VERBOSE, 'Reading parallelism...');
+                enc.parallelism = img.readVLQ(8);
+                print(Channels.VVERBOSE, `Got ${enc.parallelism}`);
+              }
+              argon2 = await getCryptKeyArgon2(enc.kdf, pw, salt, getSalt(this.verMajor, this.verMinor, this.salt, true), arg('memoryCost'), arg('timeCost'), arg('parallelism'));
+              enc.key = argon2.hash;
+            }
+            break;
+          case consts.KDF_PBKDF2:
+            if (enc.adv) {
+              print(Channels.VERBOSE, 'Reading iterations...');
+              enc.iterations = img.readVLQ(8);
+              print(Channels.VVERBOSE, `Got ${enc.iterations}`);
+            }
+            enc.key = await getCryptKeyPBKDF2(pw, getSalt(this.verMajor, this.verMinor, this.salt), 'cha512', arg('iterations', 1000000));
+            break;
+        }
+        break;
+    }
+    print(Channels.VERBOSE, 'Reading type...');
     enc.type = img.readInt(4);
     print(Channels.VVERBOSE, `Got type ${enc.type}`);
     switch (enc.type) {
@@ -988,15 +1104,6 @@ export class v1 extends Steg {
       case consts.CRYPT_AES256: break;
       default: print(Channels.VERBOSE, 'Unknown encryption type specified, doing nothing...'); return;
     }
-    switch (this.verMinor) {
-      case 0:
-        if (master.state.pws.length) { enc.key = getMD5Key(master.state.pws.shift()); }
-        else { enc.key = getMD5Key(await this.#requestPassword()); }
-        break;
-      default:
-        if (master.state.pws.length) { enc.key = await getCryptKey(master.state.pws.shift(), getSalt(this.verMajor, this.verMinor, this.salt)); }
-        else { enc.key = await getCryptKey(await this.#requestPassword(), getSalt(this.verMajor, this.verMinor, this.salt)); }
-    }
     enc.iv = new Buffer.alloc(16);
     print(Channels.VERBOSE, 'Reading IV...');
     for (let i = 0; i < 16; i++) { enc.iv[i] = img.readInt(8); }
@@ -1007,14 +1114,14 @@ export class v1 extends Steg {
     let { img, master } = this, f = { piece: 0 }, table = master.state.partialTable;
     if (!table) { table = master.state.partialTable = {}; }
     print(Channels.VERBOSE, 'Reading SEC_PARTIALFILE...\nReading file size...');
-    if (this.verMinor >= 2) { f.size = img.readVLQ(8); }
-    else { f.size = img.readInt(24); }
+    if (this.verMinor < 2) { f.size = img.readInt(24); }
+    else { f.size = img.readVLQ(8); }
     print(Channels.VVERBOSE, `Got size ${f.size}`);
     print(Channels.VERBOSE, 'Reading file name...');
     f.name = img.readString();
     print(Channels.VERBOSE, `Got ${f.name}\nReading file index...`);
-    if (this.verMinor >= 2) { table[binToDec(v)] = img.readVLQ(4); }
-    else { table[binToDec(v)] = img.readInt(8); }
+    if (this.verMinor < 2) { table[binToDec(v)] = img.readInt(8); }
+    else { table[binToDec(v)] = img.readVLQ(4); }
     print(Channels.VVERBOSE, `Got index ${table[binToDec(v)]}`);
     f.com = master.state.compress;
     f.enc = master.state.encrypt;
@@ -1022,21 +1129,21 @@ export class v1 extends Steg {
   async #readSecPartialFilePiece(rem) {
     let { img, master } = this, table = master.state.partialTable, s = 0, o = {}, f;
     print(Channels.VERBOSE, 'Reading SEC_PARTIALFILEPIECE...\nReading file index...');
-    if (this.verMinor >= 2) { f = img.readVLQ(4); }
-    else { f = img.readInt(8); }
+    if (this.verMinor < 2) { f = img.readInt(8); }
+    else { f = img.readVLQ(4); }
     print(Channels.VVERBOSE, `Got index ${f}`);
     f = table[f];
     if (!f.pieces) { f.pieces = []; }
     print(Channels.VERBOSE, 'Reading piece index...');
-    if (this.verMinor >= 2) { o.ind = img.readVLQ(4); }
-    else { o.ind = img.readInt(8); }
+    if (this.verMinor < 2) { o.ind = img.readInt(8); }
+    else { o.ind = img.readVLQ(4); }
     print(Channels.VVERBOSE, `Got index ${o.ind}`);
     print(Channels.VERBOSE, 'Reading last piece flag...');
     o.last = !!img.readInt(1);
     print(Channels.VVERBOSE, `Got ${v}`);
     print(Channels.VERBOSE, 'Reading piece size...');
-    if (this.verMinor >= 2) { o.size = img.readVLQ(8); }
-    else { o.size = img.readInt(24); }
+    if (this.verMinor < 2) { o.size = img.readInt(24); }
+    else { o.size = img.readVLQ(8); }
     print(Channels.VERBOSE, `Got size ${o.size}`);
     print(Channels.VERBOSE, 'Saving state...');
     this.#saveState(o);
@@ -1048,12 +1155,17 @@ export class v1 extends Steg {
     if (o.last) { this._partialFiles.push(new v1PartialFile(this, f)); }
   }
   async unpackPartialFile(file, output = './extracted') {
-    let { state } = file, { img, pieces } = state, r = Buffer.alloc(1), path = `${output}/${state.name}`, p, fmods, size, fd, s;
-    if (!fs.existsSync('tmp/')) { fs.mkdirSync('tmp'); }
-    path = normalize(path).replace(/^\.\.\/(\.\.\/)*/g, '');
-    fs.mkdirSync(dirname(path), { recursive: true });
+    let { state } = file, { img, pieces } = state, r = Buffer.alloc(1), path, fpath, p, fmods, size, fd, s;
+    fmods = this.#prepFileUnpack(!!state.com, !!state.enc);
+    if (output == null) { path = fpath = null; }
+    else {
+      if (!fs.existsSync('tmp/')) { fs.mkdirSync('tmp'); }
+      path = fpath = normalize(`${output}/${state.name}`).replace(/^\.\.\/(\.\.\/)*/g, '');
+      fs.mkdirSync(dirname(path), { recursive: true });
+      if (fmods.length) { path = 'tmp/tmp'; }
+    }
     print(Channels.NORMAL, `Extracting pieces for ${state.name}...`);
-    fd = fs.openSync(path, 'w');
+    fd = new fileWriter(path);
     for (let i = 0, l = pieces.length; i < l; i++) {
       print(Channels.NORMAL, `Extracting piece ${i+1} of ${pieces.length}...`);
       s = 0;
@@ -1062,22 +1174,21 @@ export class v1 extends Steg {
       img = this.img;
       while (s < size) {
         r[0] = img.readInt(8);
-        fs.writeSync(fd, r);
+        fd.writeBytes(Buffer.from(r));
         s++;
         if (!debug()) { process.stdout.write(`\rSaved ${s} of ${size}             `); }
       }
       if (!debug()) { process.stdout.write('\n'); }
     }
-    fs.closeSync(fd);
-    fmods = this.#prepFileUnpack(!!state.com, !!state.enc);
+    s = await fd.commit();
     if (fmods.length) {
       if (!debug()) { print(Channels.VERBOSE, 'Processing...'); }
-      await copyf(path, p = 'tmp/tmp', fmods);
-      fs.unlinkSync(path);
-      fs.renameSync(p, path);
+      p = await copyf(s ? s : path, path == null || this.useBufs ? null : fpath, fmods);
+      if (!s) { fs.unlinkSync(path); } else { s = p; }
     }
-    state.realSize = fmods.length ? fs.statSync(path).size : state.size;
+    state.realSize = fmods.length ? (path == null ? s.length : fs.statSync(fpath).size) : state.size;
     if ((!debug()) && (state.realSize != size)) { print(Channels.NORMAL, `Processed size: ${state.realSize}`); }
+    return fpath == null ? s : undefined;
   }
   async #readSecMode(rem) {
     let { img, master, modeMask } = this, mode;
@@ -1090,7 +1201,7 @@ export class v1 extends Steg {
     }
     print(Channels.VERBOSE, 'Reading SEC_MODE...\nReading mode...');
     mode = fixMode(img.readInt(6));
-    if ((modeMask&0b111 == 0) && (mode&consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (sec)'); }
+    if ((modeMask & 0b111 == 0) && (mode & consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (sec)'); }
     img.setMode(master.state.mode = mode);
     img.clear();
     print(Channels.VVERBOSE, `Got mode ${master.state.mode}`);
@@ -1109,16 +1220,19 @@ export class v1 extends Steg {
   async #readSecText(rem) {
     let { img, master } = this, o = {}, s = 0;
     print(Channels.VERBOSE, 'Reading SEC_TEXT...\nReading honor mask...');
-    o.mask = img.readInt(4);
+    if (this.verMinor < 4) { o.mask = img.readInt(4); }
+    else { o.mask = img.readInt(2); }
     print(Channels.VVERBOSE, `Got mask ${o.mask}`);
     print(Channels.VERBOSE, 'Reading length...');
-    if (this.verMinor >= 2) { o.len = img.readVLQ(8); }
-    else { o.len = img.readInt(16); }
+    if (this.verMinor < 2) { o.len = img.readInt(16); }
+    else { o.len = img.readVLQ(8); }
     print(Channels.VVERBOSE, `Got length ${o.len}`);
     print(Channels.VERBOSE, 'Saving state...');
     this.#saveState(o);
     print(Channels.VERBOSE, 'Reading past text...');
     while (s < o.len) { img.readBits(8); s++; }
+    if (this.verMinor < 4) { o.compressed = (o.mask & consts.TEXT_HONOR_COMPRESSION_DEP) && o.com; o.encrypted = (o.mask & consts.TEXT_HONOR_ENCRYPTION_DEP) && o.enc; }
+    else { o.compressed = (o.mask & consts.TEXT_HONOR_COMPRESSION) && o.com; o.encrypted = (o.mask & consts.TEXT_HONOR_ENCRYPTION) && o.enc; }
     this._texts.push(new v1Text(this, o));
   }
   async unpackText(text) {
@@ -1127,7 +1241,8 @@ export class v1 extends Steg {
     this.#loadState(state);
     buf = Buffer.alloc(len);
     for (let i = 0; i < len; i++) { buf[i] = img.readInt(8); }
-    fmods = this.#prepFileUnpack(state.mask & consts.TEXT_HONOR_COMPRESSION, state.mask & consts.TEXT_HONOR_ENCRYPTION, true);
+    if (this.verMinor < 4) { fmods = this.#prepFileUnpack(state.mask & consts.TEXT_HONOR_COMPRESSION_DEP, state.mask & consts.TEXT_HONOR_ENCRYPTION_DEP, true); }
+    else { fmods = this.#prepFileUnpack(state.mask & consts.TEXT_HONOR_COMPRESSION, state.mask & consts.TEXT_HONOR_ENCRYPTION, true); }
     if (fmods.length) {
       let b = fmods[0], st = b;
       if (!debug()) { print(Channels.VERBOSE, 'Processing...'); }
@@ -1152,10 +1267,20 @@ export class v1 extends Steg {
     m = master.state.mode ? master.state.mode : mode;
     print(Channels.VERBOSE, 'Reading SEC_MODEMASK...\nReading mask...');
     mask = img.readInt(3);
-    if ((mask&0b111 == 0) && (m&consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (sec)'); }
+    if ((mask & 0b111 == 0) && (m & consts.MODE_32BPP != consts.MODE_32BPP)) { throw new Error('Cannot use mode mask 000 unless mode 32BPP is active (sec)'); }
     img.setModeMask(master.state.modeMask = mask);
     img.clear();
     print(Channels.VVERBOSE, `Got mask ${v} (${master.state.modeMask})`);
+  }
+  async #readSecShuffle(rem) {
+    let { img, master } = this, seed;
+    if (rem) { print(Channels.VERBOSE, 'Clearing SEC_SHUFFLE...'); delete img.state.shuffle; return; }
+    print(Channels.VERBOSE, 'Reading SEC_SHUFFLE...\nReading seed...');
+    seed = img.readInt(32);
+    img.clear();
+    print(Channels.VVERBOSE, `Got seed ${seed}`);
+    if (!img.state.shuffle) { img.state.shuffle = new randr(); }
+    img.state.shuffle.seed = seed;
   }
 }
 class v1File extends StegFile {
@@ -1170,7 +1295,9 @@ class v1File extends StegFile {
   get size() { return this.#state.size; }
   get realSize() { return this.#state.realSize; }
   get state() { return this.#state; }
-  async extract(path = './extracted') { await this.#steg.unpackFile(this, path); }
+  get compressed() { return !!this.#state.com; }
+  get encrypted() { return !!this.#state.enc; }
+  async extract(path = './extracted') { return this.#steg.unpackFile(this, path); }
 }
 class v1PartialFile extends StegPartialFile {
   #state = null;
@@ -1184,8 +1311,10 @@ class v1PartialFile extends StegPartialFile {
   get size() { return this.#state.size; }
   get realSize() { return this.#state.realSize; }
   get state() { return this.#state; }
+  get compressed() { return !!this.#state.com; }
+  get encrypted() { return !!this.#state.enc; }
   get count() { return this.#state.pieces.length; }
-  async extract(path = './extracted') { await this.#steg.unpackPartialFile(this, path); }
+  async extract(path = './extracted') { return this.#steg.unpackPartialFile(this, path); }
 }
 class v1Text extends StegText {
   #state = null;
@@ -1198,18 +1327,20 @@ class v1Text extends StegText {
   get size() { return this.#state.len; }
   get realSize() { return this.#state.realSize; }
   get state() { return this.#state; }
+  get compressed() { return this.#state.compressed; }
+  get encrypted() { return this.#state.encrypted; }
   async extract() { return await this.#steg.unpackText(this); }
 }
 export class Builder extends _Builder {
   #out = null;
   #secs = null;
   #steg = null;
-  constructor(verMajor, verMinor) {
+  constructor(verMajor = VERSION_MAJOR, verMinor = VERSION_MINOR) {
     super();
     this.verMajor = verMajor;
     this.verMinor = verMinor;
     switch (verMajor) { case 1: break; default: throw new Error(`Unknown version ${verMajor}.x`); }
-    switch (verMinor) { case 0: case 1: case 2: case 3: break; default: throw new Error(`Unknown version ${verMajor}.${verMinor}`); }
+    switch (verMinor) { case 0: case 1: case 2: case 3: case 4: break; default: throw new Error(`Unknown version ${verMajor}.${verMinor}`); }
     this.clear();
   }
   get #VERSION_MAJOR() { return VERSION_MAJOR; }
@@ -1230,29 +1361,29 @@ export class Builder extends _Builder {
       pws: undefined,
       dryrun: false,
       dryrunComp: false,
-      keep: false, // remove for 1.4.0
       x: undefined,
       y: undefined,
       salt: undefined,
-      maps: undefined, // remove for 1.4.0
-      bufferMap: undefined
+      bufferMap: undefined,
+      useBufs: false
     };
     Image.resetMap();
     return this;
   }
   dryrun(comp = false) { this.#out.dryrun = true; this.#out.dryrunComp = !!comp; return this; }
   realrun() { if (this.#out.dryrun) { delete this.#out.dryrun; delete this.#out.dryrunComp; } return this; }
-  keep(s = true) { console.warn('keep is deprecated as of 1.3.0 and will be removed in 1.4.0'); this.#out.keep = !!s; return this; }
-  setHeaderMode(mode) { this.#out.headmode = mode&0b111111; return this; }
-  setGlobalMode(mode) { this.#out.mode = mode&0b111111; return this; }
-  setHeaderModeMask(mask) { if (mask <= 0) { throw new Error('Mode mask must be greater than 0'); } this.#out.headmodeMask = mask&0b111; return this; }
-  setGlobalModeMask(mask) { if (mask <= 0) { throw new Error('Mode mask must be greater than 0'); } this.#out.modeMask = mask&0b111; return this; }
+  setHeaderMode(mode) { this.#out.headmode = mode & 0b111111; return this; }
+  setGlobalMode(mode) { this.#out.mode = mode & 0b111111; return this; }
+  setHeaderModeMask(mask) { if (mask <= 0) { throw new Error('Mode mask must be greater than 0'); } this.#out.headmodeMask = mask & 0b111; return this; }
+  setGlobalModeMask(mask) { if (mask <= 0) { throw new Error('Mode mask must be greater than 0'); } this.#out.modeMask = mask & 0b111; return this; }
   setGlobalSeed(seed) { this.#out.rand = seed; return this; }
+  setGlobalShuffleSeed(seed) { this.#out.shuffle = seed; return this; }
   setInitialCursor(x, y) { this.#out.x = x; this.#out.y = y; return this; }
   setPasswords(pws) { this.#out.pws = pws; return this; }
   setSalt(salt, raw = false) { this.#out.salt = convertSalt(salt, raw); return this; }
   inputImage(path) { this.#out.in = path; return this; }
   outputImage(path) { this.#out.out = path; return this; }
+  useTempBuffers() { this.#out.useBufs = true; return this; }
   setGlobalAlphaBounds(b) {
     switch (b) {
       case consts.ALPHA_255: case 255: this.#out.alpha = 255; break;
@@ -1286,12 +1417,14 @@ export class Builder extends _Builder {
   clearAlphaBounds() { this.#out.secs.push({ id: consts.SEC_ALPHA, rem: true }); return this; }
   setRect(x, y, w, h) { this.#out.secs.push({ id: consts.SEC_RECT, x, y, w, h }); return this; }
   clearRect() { this.#out.secs.push({ id: consts.SEC_RECT, rem: true }); return this; }
-  setMode(mode) { this.#out.secs.push({ id: consts.SEC_MODE, mode: mode&0b111111 }); return this; }
+  setMode(mode) { this.#out.secs.push({ id: consts.SEC_MODE, mode: mode & 0b111111 }); return this; }
   clearMode() { this.#out.secs.push({ id: consts.SEC_MODE, rem: true }); return this; }
-  setModeMask(mask) { if (mask <= 0) { throw new Error('Mode mask must be greater than 0'); } this.#out.secs.push({ id: consts.SEC_MODEMASK, mask: mask&0b111 }); return this; }
+  setModeMask(mask) { if (mask <= 0) { throw new Error('Mode mask must be greater than 0'); } this.#out.secs.push({ id: consts.SEC_MODEMASK, mask: mask & 0b111 }); return this; }
   clearModeMask() { this.#out.secs.push({ id: consts.SEC_MODEMASK, rem: true }); return this; }
   setSeed(seed) { this.#out.secs.push({ id: consts.SEC_RAND, seed }); return this; }
   clearSeed() { this.#out.secs.push({ id: consts.SEC_RAND, rem: true }); return this; }
+  setShuffleSeed(seed) { this.#out.secs.push({ id: consts.SEC_SHUFFLE, seed }); return this; }
+  clearShuffleSeed() { this.#out.secs.push({ id: consts.SEC_SHUFFLE, rem: true }); return this; }
   pushCursor() { this.#out.secs.push({ id: consts.SEC_CURSOR, command: consts.CURSOR_CMD_PUSH }); return this; }
   popCursor() { this.#out.secs.push({ id: consts.SEC_CURSOR, command: consts.CURSOR_CMD_POP }); return this; }
   moveCursor(x, y, index = 0) { this.#out.secs.push({ id: consts.SEC_CURSOR, command: consts.CURSOR_CMD_MOVE, index, x, y }); return this; }
@@ -1313,7 +1446,7 @@ export class Builder extends _Builder {
     return this;
   }
   clearCompression() { this.#out.secs.push({ id: consts.SEC_COMPRESSION, rem: true }); return this; }
-  setEncryption(type, pw) {
+  setEncryption(type, pw, kdf = consts.KDF_ARGON2ID, { adv = false, iterations = 1000000, memoryCost = 65536, timeCost = 50, parallelism = 8 } = {}) {
     switch (type) {
       case consts.CRYPT_AES256:
       case consts.CRYPT_CAMELLIA256:
@@ -1323,16 +1456,24 @@ export class Builder extends _Builder {
         break;
       default: throw new Error(`Unknown encryption type ${type}`);
     }
-    this.#out.secs.push({ id: consts.SEC_ENCRYPTION, type, pw });
+    switch (kdf) {
+      case consts.KDF_PBKDF2:
+      case consts.KDF_ARGON2I:
+      case consts.KDF_ARGON2D:
+      case consts.KDF_ARGON2ID:
+        break;
+      default: throw new Error(`Unknown encryption kdf ${kdf}`);
+    }
+    this.#out.secs.push({ id: consts.SEC_ENCRYPTION, type, pw, kdf, adv, iterations, memoryCost, timeCost, parallelism });
     return this;
   }
   clearEncryption() { this.#out.secs.push({ id: consts.SEC_ENCRYPTION, rem: true }); return this; }
-  addFile(path, name, compressed = false) { this.#out.secs.push({ id: consts.SEC_FILE, path, newName: name, compressed }); return this; }
-  addPartialFile(path, _name, _fileIndex, _compressed = false) {
+  addFile(source, name, compressed = false) { this.#out.secs.push({ id: consts.SEC_FILE, path: source, newName: name, compressed }); return this; }
+  addPartialFile(source, _name, _fileIndex, _compressed = false) {
     let name, fileIndex, compressed = false;
     if (typeof _name == 'string') { name = _name; fileIndex = _fileIndex; }
     else { name = undefined; fileIndex = name; }
-    this.#out.secs.push({ id: consts.SEC_PARTIALFILE, path, newName: name, index: fileIndex, compressed });
+    this.#out.secs.push({ id: consts.SEC_PARTIALFILE, path: source, newName: name, index: fileIndex, compressed });
     return this;
   }
   addPartialFilePiece(fileIndex, size = 0, last = false) { this.#out.secs.push({ id: consts.SEC_PARTIALFILEPIECE, index: fileIndex, size, last }); return this; }
@@ -1361,12 +1502,13 @@ export class Builder extends _Builder {
         y: this.#out.y
       };
     } else {
-      let key = undefined, s = false;
+      let key = undefined, s = false, header = Buffer.alloc(5);
+      header.write('STGLO', 0);
       if (enc) {
         key = await (this.getPasswordHandler())();
         if (salt !== false) { s = salt === true ? this.#out.salt : convertSalt(salt, raw); }
       }
-      return packString(JSON.stringify(await this.getLoadOpts(false)), key, s);
+      return Buffer.concat([ header, await packString(JSON.stringify(await this.getLoadOpts(false)), key, s) ]);
     }
   }
   async setLoadOpts(blob, packed = false, enc = false, salt = false, raw = false) {
@@ -1383,48 +1525,33 @@ export class Builder extends _Builder {
         key = await (this.getPasswordHandler())();
         if (salt !== false) { s = salt === true ? this.#out.salt : convertSalt(salt, raw); }
       }
+      if (blob.toString('utf8', 0, 5) == 'STGLO') { blob = blob.slice(5); } // FIXME throw error in v1.5 if != 'STGLO'
       this.setLoadOpts(JSON.parse(await unpackString(blob, key, s)), false);
     }
   }
   async save() {
     let steg = new v1();
-    if (this.#out.keep) { this.#steg = steg; } // remove for 1.4.0
     steg.pwcb = this.getPasswordHandler();
     return steg.save(this.#out);
-  }
-  loadMap(n, p) {
-    console.warn('loadMap is deprecated as of 1.3.0 and will be removed in 1.4.0; please use the new object-based syntax described in the README for image loading');
-    if (!this.#out.maps) { this.#out.maps = {}; }
-    this.#out.maps[n] = p;
-    return this;
-  }
-  saveMap(n, p) {
-    console.warn('saveMap is deprecated as of 1.3.0 and will be removed in 1.4.0; please use the new object-based syntax described in the README for image loading');
-    if (this.#steg) {
-      let { fullTable } = this.#steg;
-      if (this.#steg.master.src == n) { this.#steg.master.saveMap(p); }
-      else if ((fullTable[n]) && (fullTable[n].img)) { fullTable[n].img.saveMap(p); }
-    }
-    return this;
   }
   setBufferMap(map) { this.#out.bufferMap = map; return this; }
   async load() {
     let steg = new v1();
-    if (this.#out.keep) { this.#steg = steg; } // remove for 1.4.0
     steg.pwcb = this.getPasswordHandler();
     return steg.load(this.#out).then((secs) => { this.#secs = secs; return secs; });
   }
   async extractAll(secs = this.#secs, path = './extracted') {
-    let arr = [], s, bytes = 0, bytesStored = 0, time = (new Date()).getTime();
+    let out = [], s, bytes = 0, bytesStored = 0, time = (new Date()).getTime();
     for (let i = 0, l = secs.length; i < l; i++) {
       s = await secs[i].extract(path);
-      if ((s instanceof String) || (typeof s === 'string')) { arr.push(s); }
+      if (path === null) { out.push(s); }
+      else if (typeof s === 'string') { out.push(s); }
       bytes += secs[i].realSize;
       bytesStored += secs[i].size;
     }
-    if (bytes != bytesStored) { print(Channels.NORMAL, `Extracted ${bytes} bytes (${bytesStored} bytes stored) in ${((new Date()).getTime()-time)/1000}s`); }
-    else { print(Channels.NORMAL, `Extracted ${bytes} bytes in ${((new Date()).getTime()-time)/1000}s`); }
-    return arr;
+    if (bytes != bytesStored) { print(Channels.NORMAL, `Extracted ${bytes} bytes (${bytesStored} bytes stored) in ${((new Date()).getTime() - time)/1000}s`); }
+    else { print(Channels.NORMAL, `Extracted ${bytes} bytes in ${((new Date()).getTime() - time)/1000}s`); }
+    return out;
   }
 }
 

@@ -10,10 +10,6 @@ CHANGELOG:
     corrected some things regarding the documentation of the object passed to pack()
       added missing SEC_MODEMASK block (this change also backported to 1.1's spec)
       removed 'count' from SEC_PARTIALFILE block as it was never used (this change also backported to 1.0 and 1.1's spec)
-    added 'x'/'y' to save()/load()
-    added 'keep' flag to save()
-    added 'salt' to save()/load()
-    added 'map' to save()/load()
     cleaned up some wording around mode and mode mask (this change also backported to 1.1's spec)
     changed several unsigned integer fields into unsigned VLQ (Variable-Length Quantity), with different chunk sizes
       'size'/'length' type fields in 8bit chunks as values are not expected to exceed 16383 very often (2 chunks)
@@ -152,100 +148,4 @@ Sections:
     read(3bit): mode mask
     override the global mode mask with this one until either another SEC_MODEMASK is found or SEC_MODEMASK is cleared
     write buffer is flushed when both setting and clearing
-
-
-input object to pack()
-{
-  verMajor: <version>, // defaults to VERSION_MAJOR const
-  verMinor: <version>, // defaults to VERSION_MINOR const
-  headmode: <mode>,
-  headmodeMask: <mask>, // see modeMask
-  mode: <mode>,
-  modeMask: <mask>, // a 3-bit mask of which channels to use (RGB). A mask of 000 cannot be used unless MODE_32BPP is used as well
-  salt: <salt>, // hex string for the 32 byte salt, overriding the internal salt
-  secs: [
-    {
-      id: SEC_FILE,
-      path: file path,
-      compressed: <boolean> // if this file is already compressed so that SEC_COMPRESSION ignores it in packing
-    },
-    {
-      id: SEC_RAND, // overrides global seed
-      seed: <seed>
-    },
-    {
-      id: SEC_IMAGETABLE,
-      in: [], // array of input image paths
-      out: [] // array of output image names
-    },
-    {
-      id: SEC_RECT,
-      x, y, w, h
-    },
-    {
-      id: SEC_CURSOR,
-      x, y, index
-    },
-    {
-      id: SEC_COMPRESSION, // this gets applied *globally* to all files packed after being enabled
-      type: <type>, // from const table
-      level: <0-9> // if applicable. 0 uses whatever the default is for this type
-    },
-    {
-      id: SEC_ENCRYPTION, // this gets applied *globally* to all files packed after being enabled
-      type: <type>, // from const table
-      pw: '' // password to use if applicable
-    },
-    {
-      id: SEC_PARTIALFILE, // SEC_GZIP and SEC_AES, if enabled, get applied to the source file here
-      path: file path,
-      index: <n>, // file index
-      compressed: <boolean> // if this file is already compressed so that SEC_COMPRESSION ignores it in packing
-    },
-    {
-      id: SEC_PARTIALFILEPIECE,
-      index: <n>, // the index used in the matching SEC_PARTIALFILE
-      size: <n> // size of this piece. if omitted, it's set to the size of the remaining file
-    },
-    {
-      id: SEC_MODE,
-      mode: <mode> // override the global mode with this one until another SEC_MODE is set or SEC_MODE is cleared
-    },
-    {
-      id: SEC_MODEMASK,
-      mask: <mask> // override the global mode mask with this one until another SEC_MODEMASK is set or SEC_MODEMASK is cleared
-    },
-    {
-      id: SEC_ALPHA,
-      alpha: ... // change the alpha threshhold, see settings mask
-    },
-    {
-      id: SEC_TEXT,
-      text: <text>,
-      honor: <honor mask>
-    }
-  ],
-  alpha: ..., // optional, see settings mask for allowed values between 0-255
-  rand: <seed>, // optional
-  x: <x>, y: <y>, // initial cursor position
-  dryrun: <true/false>, // only do a dry run; don't save the images, don't compress/encrypt, don't write any files, only return success/failure
-  dryrunComp: <true/false>, // requires dryrun; does a full dryrun by fully encrypting/compressing files and performing all of the normal actions short of the final image saving
-  keep: <true/false>, // don't clean up the image table after a save() call, so that maps can be saved after
-  in: '', // input image path
-  map: '', // path to use to load a map
-  out: '' // output image path
-}
-
-
-input object to unpack()
-{
-  headmode: <mode>, // if needed
-  headmodeMask: <mask>, // if needed
-  image,
-  rand: <seed>, // if needed
-  x: <x>, y: <y>, // initial cursor position
-  map: '', // path to use to load a map
-  pws: [ '', ... ], // if needed for SEC_ENCRYPTION. Shifted off the top and used in order for each SEC_ENCRYPTION encountered. Any missing result in a call to requestPassword
-  salt: <salt> // hex string for the 32 byte salt, overriding the internal salt
-}
 
