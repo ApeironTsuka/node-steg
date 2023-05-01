@@ -38,6 +38,7 @@ function parseCmdLine(args) {
         case '-rand': if (test(i + 1, true)) { state.rand = args[++i]; } else { state.rand = true; } break;
         case '-shuffle': if (test(i + 1, true)) { state.shuffle = args[++i]; } else { state.shuffle = true; } break;
         case '-dryrun': state.dryrun = true; if (test(i + 1, true, 'comp')) { state.dryrunc = true; i++; } break;
+        case '-usethreads': state.usethreads = true; break;
         case '-in':
           {
             let frame = -1, map = false, path;
@@ -310,6 +311,7 @@ async function run() {
     if (state.shuffle) { bldr.setGlobalShuffleSeed(state.shuffle); }
     if (state.cursor) { bldr.setInitialCursor(state.cursor.x, state.cursor.y); }
     if (state.dryrun) { bldr.dryrun(!!state.dryrunc); }
+    if (state.usethreads) { bldr.useThreads(); }
     if (state.in) { bldr.inputImage(state.in); }
     if (state.out) { bldr.outputImage(state.out); }
     if (state.secs) {
