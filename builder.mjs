@@ -4,7 +4,7 @@ import { Image } from './image.mjs';
 const mutableStdout = new Writable({ write: function (chunk, encoding, cb) { if (!this.muted) { process.stdout.write(chunk, encoding); } cb(); } });
 export class Builder {
   #pwcb = null;
-  useThreads(b = true) { Image.useThreads = b; }
+  useThreads(b = true) { Image.useThreads = b; return this; }
   setPasswordHandler(f) { this.#pwcb = f; return this; }
   getPasswordHandler() {
     return () => {
