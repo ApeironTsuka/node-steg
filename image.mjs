@@ -2,12 +2,15 @@ import _PNG from 'pngjs';
 import fs from 'fs';
 import { randr, print, Channels, binToDec, decToBin, pad, uintToVLQ, bitShuffle, bitUnshuffle } from './util.mjs';
 import consts from './consts.mjs';
+import { ImageSaver } from './imagesaver.mjs';
 import WebP from 'node-webpmux';
 import { dirname, basename } from 'path';
 const PNG = _PNG.PNG;
 
 export class Image {
   static map = {};
+  static useThreads = false;
+  static saveList = [];
   constructor() { this.rand = new randr(); this.shuffle = new randr(); this.loaded = false; }
   async load(o) {
     let { path, buffer, name, map, frame } = o, type;
@@ -327,6 +330,7 @@ export class Image {
   }
   static checkMode(m, c) { return (m & 7) == c; }
   static resetMap() { delete Image.map; Image.map = {}; }
+  static async commitSave() { let out; if (Image.useThreads) { out = ImageSaver.save(Image.saveList); Image.saveList.length = 0; } return out; }
 
   async #loadPNG(d) {
     let img = d;
@@ -335,6 +339,7 @@ export class Image {
     this.type = consts.IMGTYPE_PNG;
   }
   async #savePNG(p) {
+    if (Image.useThreads) { Image.saveList.push({ p, img: this.img, type: this.type, isBuffer: this.isBuffer, _img: this }); return; }
     let b = PNG.sync.write(this.img, { deflateLevel: 9 });
     if (this.isBuffer) { return b; }
     else { fs.writeFileSync(p, b); }
@@ -359,6 +364,7 @@ export class Image {
     }
   }
   async #saveWEBP(p) {
+    if (Image.useThreads) { Image.saveList.push({ p, img: this.img, type: this.type, isBuffer: this.isBuffer, _img: this, frame: this.frame, webp: this.webp }); return; }
     let d = this.img.data;
     switch (this.type) {
       case consts.IMGTYPE_WEBP:

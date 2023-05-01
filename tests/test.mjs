@@ -1,6 +1,7 @@
 import { util, consts, CreateBuilder } from '../steg.mjs';
 import { join as pathJoin } from 'path';
 import _PNG from 'pngjs';
+import { Image } from '../image.mjs';
 import fs from 'fs';
 const { PNG } = _PNG;
 const verMajor = consts.LATEST_MAJOR, verMinor = consts.LATEST_MINOR;
@@ -74,12 +75,13 @@ function setBuffer(buf, r, g, b, a) {
   }
 }
 async function main() { try { await go(); } catch (e) { console.log(e); } }
+function pwhdlr() { return '12345'; }
 async function go() {
   let b1 = new Uint8Array(50*50*4), b2 = new Uint8Array(50*50*4), secs, t;
   setBuffer(b1, 0, 255, 0, 255); setBuffer(b2, 0, 255, 0, 255);
   b1 = PNG.sync.write({ width: 50, height: 50, data: b1 }, { deflateLevel: 9 });
   b2 = PNG.sync.write({ width: 50, height: 50, data: b2 }, { deflateLevel: 9 });
-  steg.cliPasswordHandler();
+  steg.setPasswordHandler(pwhdlr).useThreads();
   try { fs.mkdirSync('tests/tmp'); } catch (e) {}
   console.log('Testing saving...');
   secs = await steg.inputImage({ path: 'tests/orig.webp', frame: 0 })
@@ -99,8 +101,7 @@ async function go() {
   console.log('Testing loading...');
   steg.clear()
       .inputImage({ path: 'tests/tmp/out.webp', frame: 0 })
-      .useTempBuffers()
-      .cliPasswordHandler();
+      .useTempBuffers();
   secs = await steg.load();
   console.log('Finished loading\nExtracting...');
   console.log(await steg.extractAll(secs, './tests/tmp'));
@@ -248,8 +249,7 @@ async function go() {
         .save();
   console.log('Testing loading...');
   steg.clear()
-      .inputImage('tests/tmp/out.png')
-      .cliPasswordHandler();
+      .inputImage('tests/tmp/out.png');
   secs = await steg.load();
   console.log('Finished loading\nExtracting...');
   console.log(await steg.extractAll(secs, './tests/tmp'));

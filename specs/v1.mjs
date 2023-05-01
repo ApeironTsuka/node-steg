@@ -125,8 +125,9 @@ export class v1 extends Steg {
     for (let i = 0, l = secs.length; i < l; i++) {
       if (!await this.#packSec(secs[i])) { throw new Error(`Unknown sec id ${secs[i].id}`); }
     }
+    print(Channels.VERBOSE, 'Saving output images...');
     let ret = await this.#saveImages(input.out);
-    print(Channels.NORMAL, `Number of pixels changed in ${input.out.path || input.out.name || input.out}: ${img.used.count} of ${img.width * img.height} (${Math.floor(img.used.count / (img.width * img.height) * 10000) / 100}%)`);
+    print(Channels.NORMAL, `Number of pixels changed in ${input.out.path || input.out.name || input.out}${img.frame !== undefined ? ' frame '+img.frame : ''}: ${img.used.count} of ${img.width * img.height} (${Math.floor(img.used.count / (img.width * img.height) * 10000) / 100}%)`);
     delete this.table;
     delete this.fullTable;
     return ret;
@@ -255,10 +256,10 @@ export class v1 extends Steg {
       let s = typeof o === 'string' ? { path: o } : { img, path, mapOut: map, buffer, name, frame };
       img.flush();
       await img.save(s);
-      if (typeof o === 'string') { out.push({ path: o, img }); }
+      if (typeof o === 'string') { out.push(img._out = { path: o, img }); }
       else if (!outmap[path || name || o]) {
         if (map) { map = { path: typeof map == 'string' ? map : map.path, name: map.name, buffer: map.buffer ? img.mapBuffer : undefined }; }
-        out.push({ path, map, buffer: img.buffer, name, frame });
+        out.push(img._out = { path, map, buffer: img.buffer, name, frame });
         outmap[path || name || o] = true;
       }
     };
@@ -269,7 +270,14 @@ export class v1 extends Steg {
       if (!img.loaded) { continue; }
       if (img.master == img) { if (t.mapOut) { img.saveMap(typeof t.mapOut == 'string' ? { path: t.mapOut } : t.mapOut); } continue; }
       if (!this.dryrun) { await f(t, img); }
-      print(Channels.NORMAL, `Number of pixels changed in ${t.name}: ${img.used.count} of ${img.width * img.height} (${Math.floor(img.used.count / (img.width * img.height) * 10000) / 100}%)`);
+      print(Channels.NORMAL, `Number of pixels changed in ${t.name}${t.frame !== undefined ? ' frame '+t.frame : ''}: ${img.used.count} of ${img.width * img.height} (${Math.floor(img.used.count / (img.width * img.height) * 10000) / 100}%)`);
+    }
+    let list = await Image.commitSave();
+    if (list) {
+      for (let i = 0, l = list.length; i < l; i++) {
+        if (list[i].buffer) { list[i]._out.buffer = list[i].buffer; }
+        delete list[i]._out;
+      }
     }
     return out;
   }

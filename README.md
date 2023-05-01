@@ -105,11 +105,20 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 #### `cliPasswordHandler()`
   Asks the user for missing passwords via the command line and a silent 'Enter password:' prompt.
 
+#### `setPasswordHandler(f)`
+  Sets `f` as the password handler. Must return the password to use, either directly or via a Promise.
+
+#### `getPasswordHandler()`
+  Returns the previously-set handler wrapped in a function. The function will throw an error if no handler was set.
+
 #### `setBufferMap(map)`
   Use `map`, a map of name/Buffer pairs, for images and maps.<br />
   Needed when using a Buffer for a map defined in an image table. Otherwise it's mainly for convenience.<br />
   Example: `steg.clear().setBufferMap({ 'image.png': pngBuffer, 'image.map': mapBuffer }).inputImage({ name: 'image.png', map: 'image.map' })...`<br />
   You can alternatively do `.inputImage({ name: 'image.png', buffer: pngBuffer, map: { name: 'image.map', buffer: mapBuffer } })` in the above example.
+
+#### `useThreads(b = true)`
+  Enable or disable the use of threads (Workers) when saving. Can greatly speed up using WebP images.
 
 ### Input/output
 
