@@ -250,17 +250,17 @@ export class v1 extends Steg {
     return true;
   }
   async #saveImages(o) {
-    let out = [], outmap = {}, img, t;
+    let out = [], outmap = {}, tmap = new Map(), img, t;
     let f = async ({ path, map: _map, mapOut, buffer, name, frame }, img, o = undefined) => {
       let map = mapOut || _map, t;
       let s = typeof o === 'string' ? { path: o } : { img, path, mapOut: map, buffer, name, frame };
       img.flush();
       await img.save(s);
-      if (typeof o === 'string') { out.push(t = { path: o, img }); if (Image.useThreads) { img._out = t; } }
+      if (typeof o === 'string') { out.push(t = { path: o, img }); if (Image.useThreads) { tmap.set(img, t); } }
       else if (!outmap[path || name || o]) {
         if (map) { map = { path: typeof map == 'string' ? map : map.path, name: map.name, buffer: map.buffer ? img.mapBuffer : undefined }; }
         out.push(t = { path, map, buffer: img.buffer, name, frame });
-        if (Image.useThreads) { img._out = t; }
+        if (Image.useThreads) { tmap.set(img, t); }
         outmap[path || name || o] = true;
       }
     };
@@ -276,8 +276,7 @@ export class v1 extends Steg {
     let list = await Image.commitSave();
     if (list) {
       for (let i = 0, l = list.length; i < l; i++) {
-        if (list[i].buffer) { list[i]._out.buffer = list[i].buffer; }
-        delete list[i]._out;
+        if (list[i].buffer) { tmap.get(list[i]).buffer = list[i].buffer; }
       }
     }
     return out;

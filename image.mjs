@@ -2,7 +2,7 @@ import _PNG from 'pngjs';
 import fs from 'fs';
 import { randr, print, Channels, binToDec, decToBin, pad, uintToVLQ, bitShuffle, bitUnshuffle } from './util.mjs';
 import consts from './consts.mjs';
-import { ImageSaver } from './imagesaver.mjs';
+import { ThreadedSaver } from './threadedsaver.mjs';
 import WebP from 'node-webpmux';
 import { dirname, basename } from 'path';
 const PNG = _PNG.PNG;
@@ -330,7 +330,7 @@ export class Image {
   }
   static checkMode(m, c) { return (m & 7) == c; }
   static resetMap() { delete Image.map; Image.map = {}; }
-  static async commitSave() { let out; if (Image.useThreads) { out = ImageSaver.save(Image.saveList); Image.saveList.length = 0; } return out; }
+  static async commitSave() { let out; if (Image.useThreads) { out = ThreadedSaver.save(Image.saveList); Image.saveList.length = 0; } return out; }
 
   async #loadPNG(d) {
     let img = d;
