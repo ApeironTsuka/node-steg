@@ -14,6 +14,7 @@ v1.4.0
   Added KDF argument to Builder.setEncryption. Defaults to Argon2id
   Added KDF flag to -ns encryption in bin/steg.mjs
   Added .compressed and .encrypted properties to StegFile, StegPartialFile, and StegText
+  Added Builder useThreads(b = true)
   Changed Builder addFile() and addPartialFile() to now support passing in a Buffer instance instead of a path
   Changed StegFile and StegPartialFile extract() to support being passed null to return a Buffer
   Made Argon2id the default KDF for 1.4+

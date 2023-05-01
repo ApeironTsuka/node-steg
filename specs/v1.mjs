@@ -252,14 +252,15 @@ export class v1 extends Steg {
   async #saveImages(o) {
     let out = [], outmap = {}, img, t;
     let f = async ({ path, map: _map, mapOut, buffer, name, frame }, img, o = undefined) => {
-      let map = mapOut || _map;
+      let map = mapOut || _map, t;
       let s = typeof o === 'string' ? { path: o } : { img, path, mapOut: map, buffer, name, frame };
       img.flush();
       await img.save(s);
-      if (typeof o === 'string') { out.push(img._out = { path: o, img }); }
+      if (typeof o === 'string') { out.push(t = { path: o, img }); if (Image.useThreads) { img._out = t; } }
       else if (!outmap[path || name || o]) {
         if (map) { map = { path: typeof map == 'string' ? map : map.path, name: map.name, buffer: map.buffer ? img.mapBuffer : undefined }; }
-        out.push(img._out = { path, map, buffer: img.buffer, name, frame });
+        out.push(t = { path, map, buffer: img.buffer, name, frame });
+        if (Image.useThreads) { img._out = t; }
         outmap[path || name || o] = true;
       }
     };
