@@ -1,9 +1,11 @@
-import { parentPort, workerData } from 'worker_threads';
+import fs from 'node:fs';
+import { parentPort, workerData } from 'node:worker_threads';
 import _PNG from 'pngjs';
-const PNG = _PNG.PNG;
 import WebP from 'node-webpmux';
-import fs from 'fs';
 import consts from './consts.mjs';
+
+const PNG = _PNG.PNG;
+
 async function savePNG(wd) {
   let b = PNG.sync.write(wd.img, { deflateLevel: 9 });
   if (wd.isBuffer) { return { buffer: b }; }

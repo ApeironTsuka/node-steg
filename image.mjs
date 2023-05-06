@@ -1,10 +1,11 @@
+import { dirname, basename } from 'node:path';
+import fs from 'node:fs';
 import _PNG from 'pngjs';
-import fs from 'fs';
+import WebP from 'node-webpmux';
 import { randr, print, Channels, binToDec, decToBin, pad, uintToVLQ, bitShuffle, bitUnshuffle } from './util.mjs';
 import consts from './consts.mjs';
 import { ThreadedSaver } from './threadedsaver.mjs';
-import WebP from 'node-webpmux';
-import { dirname, basename } from 'path';
+
 const PNG = _PNG.PNG;
 
 export class Image {
@@ -144,9 +145,13 @@ export class Image {
     this.cursor.x = x; this.cursor.y = y;
   };
   writePixel(data) {
-    let { x, y } = this.cursor, { img, data: d, alphaThresh, mode, modeMask } = this, w = img.width, pind = (y * (w * 4)) + (x * 4);
-    let v = [d[pind], d[pind + 1], d[pind + 2], d[pind + 3]], { checkMode } = Image, k, m, f = [], bits, off = 0,
-        maskCount = ((modeMask & 4 ? 1 : 0) + (modeMask & 2 ? 1 : 0) + (modeMask & 1 ? 1 : 0)) - 1;
+    let { x, y } = this.cursor,
+        { img, data: d, alphaThresh, mode, modeMask } = this,
+        w = img.width, pind = (y * (w * 4)) + (x * 4),
+        v = [d[pind], d[pind + 1], d[pind + 2], d[pind + 3]],
+        { checkMode } = Image, f = [], off = 0,
+        maskCount = ((modeMask & 4 ? 1 : 0) + (modeMask & 2 ? 1 : 0) + (modeMask & 1 ? 1 : 0)) - 1,
+        k, m, bits;
     let chkChannel = (c) => { return (c == 3) || (modeMask & (1 << (2 - c))); },
         write = (c, bits, o) => {
           let d = bits / 3, tbits = (1 << d) - 1, shift;
@@ -255,11 +260,11 @@ export class Image {
     return this.writeBits(os);
   }
   readPixel(silent = false) {
-    let { x, y } = this.cursor;
-    let { img, data: d, alphaThresh, mode, modeMask } = this, pind = (y * (img.width * 4)) + (x * 4);
-    let v = [d[pind], d[pind + 1], d[pind + 2], d[pind + 3]];
-    let { checkMode } = Image;
-    let s = '', k, m, read = false;
+    let { x, y } = this.cursor,
+        { img, data: d, alphaThresh, mode, modeMask } = this, pind = (y * (img.width * 4)) + (x * 4),
+        v = [ d[pind], d[pind + 1], d[pind + 2], d[pind + 3] ],
+        { checkMode } = Image,
+        s = '', read = false, k, m;
     let chkChannel = (c) => { return (c == 3) || (modeMask & (1 << (2 - c))); };
     if ((m = (mode & (7 << 3)) >> 3) == 0) {
       if (v[3] < alphaThresh) { return ''; }

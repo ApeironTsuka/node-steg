@@ -1,8 +1,9 @@
+import fs from 'node:fs';
+import { join as pathJoin } from 'node:path';
 import { util, consts, CreateBuilder } from '../steg.mjs';
-import { join as pathJoin } from 'path';
 import _PNG from 'pngjs';
 import { Image } from '../image.mjs';
-import fs from 'fs';
+
 const { PNG } = _PNG;
 const verMajor = consts.LATEST_MAJOR, verMinor = consts.LATEST_MINOR;
 

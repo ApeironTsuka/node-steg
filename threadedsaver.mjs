@@ -1,5 +1,6 @@
-import { Worker } from 'worker_threads';
+import { Worker } from 'node:worker_threads';
 import consts from './consts.mjs';
+
 function spawnWorker(data) {
   return new Promise((res, rej) => {
     let worker = new Worker('./threadedsaver.worker.mjs', { workerData: data });

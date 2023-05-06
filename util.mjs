@@ -1,7 +1,7 @@
-import fs from 'fs';
-import { createGzip, createGunzip, createBrotliCompress, createBrotliDecompress, constants } from 'zlib';
-import { createCipheriv, createDecipheriv, pbkdf2, createSecretKey, createHash, randomBytes } from 'crypto';
-import { Transform } from 'stream';
+import fs from 'node:fs';
+import { createGzip, createGunzip, createBrotliCompress, createBrotliDecompress, constants } from 'node:zlib';
+import { createCipheriv, createDecipheriv, pbkdf2, createSecretKey, createHash, randomBytes } from 'node:crypto';
+import { Transform } from 'node:stream';
 import seedrandom from 'seedrandom';
 import argon2 from 'argon2';
 import consts from './consts.mjs';
@@ -17,13 +17,13 @@ export function debug(v) {
   _debug = !!v;
 };
 export function baseConv(n, src, dst, k) {
-  let srclen = src.length, dstlen = dst.length, val = 0, m = 1, digit, ret = '';
-  let vod = (d, a) => a.indexOf(d);
-  let strrep = (a, z) => { let out = ''; for (let i = 0; i < z; i++) { out += a; } return out; };
+  let srclen = src.length, dstlen = dst.length, val = 0, m = 1, ret = '', digit;
+  let vod = (d, a) => a.indexOf(d),
+      strrep = (a, z) => { let out = ''; for (let i = 0; i < z; i++) { out += a; } return out; };
   while (n.length) {
-    digit = n.charAt(n.length-1);
+    digit = n.charAt(n.length - 1);
     val += m * vod(digit, src);
-    n = n.substr(0, n.length-1);
+    n = n.substr(0, n.length - 1);
     m *= srclen;
   }
   while (val >= dstlen) {
@@ -53,10 +53,10 @@ export function alphaToBits(a) {
     case 184: return '010';
     case 148: return '011';
     case 112: return '100';
-    case 76: return '101';
-    case 40: return '110';
-    case 0: return '111';
-    default: return '000';
+    case  76: return '101';
+    case  40: return '110';
+    case   0: return '111';
+    default:  return '000';
   }
 }
 export function bitsToAlpha(b) {
@@ -66,14 +66,14 @@ export function bitsToAlpha(b) {
     case '010': return 184;
     case '011': return 148;
     case '100': return 112;
-    case '101': return 76;
-    case '110': return 40;
-    case '111': return 0;
-    default: return 255;
+    case '101': return  76;
+    case '110': return  40;
+    case '111': return   0;
+    default:    return 255;
   }
 }
 export class fileReader {
-  constructor(p) { this.type = fileTypes.NONE; this.init(p);}
+  constructor(p) { this.type = fileTypes.NONE; this.init(p); }
   init(source) {
     if (typeof source === 'string') { this.type = fileTypes.FILE; this.fp = fs.openSync(this.path = source, 'r'); }
     else { this.type = fileTypes.BUFFER; this.buffer = source; this.cursor = 0; }
@@ -212,7 +212,7 @@ export function decryptchacha20(key, iv) { return createDecipheriv('chacha20', k
 export function cryptblowfish(key, iv) { return createCipheriv('bf-cbc', key, iv); }
 export function decryptblowfish(key, iv) { return createDecipheriv('bf-cbc', key, iv); }
 export async function packString(s, pw, salt) {
-  let fmods = [ ], bufs = [], b, st;
+  let fmods = [], bufs = [], b, st;
   if (pw) {
     let key = await getCryptKey(pw, salt || utilSalt), iv = generateIV();
     b = Buffer.alloc(17);
@@ -253,7 +253,7 @@ export async function unpackString(s, pw, salt) {
   } else { return buf.toString(); }
 }
 export function uintToVLQ(uint, chkSize) {
-  let out = [], i = 0, k, n = uint, s = chkSize - 1, mask = (1 << s) - 1;
+  let out = [], i = 0, n = uint, s = chkSize - 1, mask = (1 << s) - 1, k;
   while (true) {
     k = n & (mask << (s * i));
     n -= k;
@@ -266,18 +266,20 @@ export function uintToVLQ(uint, chkSize) {
   return out;
 }
 export class randr {
-  constructor(s) { this._seed = 0; if (s) { this.seed = s; } }
+  #alg = null;
+  #seed = 0;
+  constructor(s) { if (s) { this.seed = s; } }
   fgen(v) {
-    if (!this._alg) { this._alg = seedrandom(this._seed, { state: true }); }
-    return (v || 1) * this._alg();
+    if (!this.#alg) { this.#alg = seedrandom(this.#seed, { state: true }); }
+    return (v || 1) * this.#alg();
   }
   gen(v) { return Math.floor(this.fgen(v)); }
-  get state() { return this._alg.state(); }
-  get seed() { return this._seed; }
+  get state() { return this.#alg.state(); }
+  get seed() { return this.#seed; }
   set seed(v) {
     if ((typeof v === 'string') || (v instanceof String) ||
-        (typeof v === 'number') || (v instanceof Number)) { this._alg = seedrandom(v, { state: true }); this._seed = v; }
-    else { this._alg = seedrandom('', { state: v }); this._seed = v; }
+        (typeof v === 'number') || (v instanceof Number)) { this.#alg = seedrandom(v, { state: true }); this.#seed = v; }
+    else { this.#alg = seedrandom('', { state: v }); this.#seed = v; }
   }
 }
 function shuffleOrder(rand, len) {

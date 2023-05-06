@@ -1,5 +1,6 @@
-import { Writable } from 'stream';
+import { Writable } from 'node:stream';
 import { Image } from './image.mjs';
+
 async function readStdin() {
   let res, p = new Promise((r,r2) => { res = r; }), buffers = [], f;
   process.stdin.resume();

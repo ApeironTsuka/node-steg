@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs';
 import { util, consts, CreateBuilder } from '../steg.mjs';
-import fs from 'fs';
 import { StegFile, StegPartialFile, StegText } from '../stubs.mjs';
 
 let debug = false, channel = util.Channels.NORMAL;
