@@ -43,6 +43,7 @@ async function readStdin() {
       let r;
       buffers.push(chunk.subarray(0, ind));
       chunk.fill(0);
+      for (let i = 0; i < buffers.length; i++) { if ((buffers[i].length == 1) && (buffers[i][0] == 0)) { buffers.splice(i, 1); i--; continue; } }
       r = Buffer.concat(buffers);
       for (let i = 0, l = buffers.length; i < l; i++) { buffers[i].fill(0); }
       process.stdin.setRawMode(false);
