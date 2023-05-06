@@ -75,7 +75,7 @@ function setBuffer(buf, r, g, b, a) {
   }
 }
 async function main() { try { await go(); } catch (e) { console.log(e); } }
-function pwhdlr() { return '12345'; }
+function pwhdlr() { return Buffer.from('12345'); }
 async function go() {
   let b1 = new Uint8Array(50*50*4), b2 = new Uint8Array(50*50*4), secs, t;
   setBuffer(b1, 0, 255, 0, 255); setBuffer(b2, 0, 255, 0, 255);

@@ -47,8 +47,6 @@ function fixMode(m) {
   return m;
 }
 export class v1 extends Steg {
-  get #VERSION_MAJOR() { return VERSION_MAJOR; }
-  get #VERSION_MINOR() { return VERSION_MINOR; }
   async #requestPassword() {
     if (!this.pwcb) { throw new Error('No callback registered for handling passwords'); }
     return await this.pwcb();
@@ -58,9 +56,9 @@ export class v1 extends Steg {
         headmode = input.headmode || consts.HEADMODE,
         headmodeMask = input.headmodeMask || consts.HEADMODEMASK,
         { mode, modeMask, secs, dryrun, dryrunComp, rand, shuffle, x = 0, y = 0, salt, maps, bufferMap } = input,
-        verMajor = input.verMajor || this.#VERSION_MAJOR,
-        verMinor = input.verMinor || this.#VERSION_MINOR;
-    if (verMajor != this.#VERSION_MAJOR) { throw new Error(`Trying to build a version ${verMajor}.x with a ${this.#VERSION_MAJOR}.x constructor`); }
+        verMajor = input.verMajor || VERSION_MAJOR,
+        verMinor = input.verMinor || VERSION_MINOR;
+    if (verMajor != VERSION_MAJOR) { throw new Error(`Trying to build a version ${verMajor}.x with a ${VERSION_MAJOR}.x constructor`); }
     switch (verMinor) {
       case 0: case 1: case 2: case 3: case 4: break;
       default: throw new Error(`Trying to build an unsupported version ${verMajor}.${verMinor}`);
@@ -170,8 +168,8 @@ export class v1 extends Steg {
     print(Channels.VERBOSE, 'Unpacking...\nReading version...');
     verMajor = img.readInt(6);
     switch (verMajor) {
-      case this.#VERSION_MAJOR: break;
-      default: throw new Error(`Trying to extract version ${verMajor}.x with ${this.#VERSION_MAJOR}.x`);
+      case VERSION_MAJOR: break;
+      default: throw new Error(`Trying to extract version ${verMajor}.x with ${VERSION_MAJOR}.x`);
     }
     verMinor = img.readInt(6);
     switch (verMinor) {
@@ -616,6 +614,7 @@ export class v1 extends Steg {
       case consts.CRYPT_AES256: break;
     }
     if (!sec.pw) { sec.pw = await this.#requestPassword(); }
+    else if (!(sec.pw instanceof Buffer)) { sec.pw = Buffer.from(sec.pw); }
     switch (this.verMinor) {
       case 0: enc.key = getMD5Key(sec.pw); break;
       case 1: case 2: case 3: enc.key = await getCryptKeyPBKDF2(sec.pw, getSalt(this.verMajor, this.verMinor, this.salt)); break;
@@ -635,6 +634,7 @@ export class v1 extends Steg {
         }
         break;
     }
+    sec.pw.fill(0);
     if (this.verMinor >= 4) {
       print(Channels.VERBOSE, 'Packing KDF...');
       img.writeInt(sec.kdf, 2);
@@ -1048,7 +1048,7 @@ export class v1 extends Steg {
     if (rem) { print(Channels.VERBOSE, 'Clearing SEC_ENCRYPTION...'); delete master.state.encrypt; return; }
     let arg = (n, d = undefined) => { return enc.adv ? enc[n] : d; };
     print(Channels.VERBOSE, 'Reading SEC_ENCRYPTION...\n');
-    if (master.state.pws.length) { pw = master.state.pws.shift(); }
+    if (master.state.pws.length) { pw = master.state.pws.shift(); if (!(pw instanceof Buffer)) { pw = Buffer.from(pw); } }
     else { pw = await this.#requestPassword(); }
     switch (this.verMinor) {
       case 0:
@@ -1097,6 +1097,7 @@ export class v1 extends Steg {
         }
         break;
     }
+    pw.fill(0);
     print(Channels.VERBOSE, 'Reading type...');
     enc.type = img.readInt(4);
     print(Channels.VVERBOSE, `Got type ${enc.type}`);
@@ -1342,7 +1343,6 @@ class v1Text extends StegText {
 export class Builder extends _Builder {
   #out = null;
   #secs = null;
-  #steg = null;
   constructor(verMajor = VERSION_MAJOR, verMinor = VERSION_MINOR) {
     super();
     this.verMajor = verMajor;
@@ -1351,8 +1351,6 @@ export class Builder extends _Builder {
     switch (verMinor) { case 0: case 1: case 2: case 3: case 4: break; default: throw new Error(`Unknown version ${verMajor}.${verMinor}`); }
     this.clear();
   }
-  get #VERSION_MAJOR() { return VERSION_MAJOR; }
-  get #VERSION_MINOR() { return VERSION_MINOR; }
   clear() {
     this.#secs = null;
     this.#out = {

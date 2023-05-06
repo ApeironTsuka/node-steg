@@ -1,6 +1,4 @@
 export class Steg {
-  get #VERSION_MAJOR() { return 0; }
-  get #VERSION_MINOR() { return 0; }
   async save(input) { throw new Error(`Unimplemented func ::save`); }
   async load(input) { throw new Error(`Unimplemented func ::load`); }
 }
