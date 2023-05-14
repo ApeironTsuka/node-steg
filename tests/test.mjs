@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { join as pathJoin } from 'node:path';
-import { util, consts, CreateBuilder } from '../steg.mjs';
 import _PNG from 'pngjs';
+import { util, consts, CreateBuilder } from '../steg.mjs';
 import { Image } from '../image.mjs';
 
 const { PNG } = _PNG;

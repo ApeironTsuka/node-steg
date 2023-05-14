@@ -12,11 +12,7 @@ async function savePNG(wd) {
   else { fs.writeFileSync(wd.p, b); return { buffer: undefined }; }
 }
 async function saveWEBP(wd) {
-  let d = wd.img.data, out;
-  let webp = new WebP.Image();
-  webp.data = wd.webp.data;
-  webp.loaded = wd.webp.loaded;
-  webp.path = wd.webp.path;
+  let d = wd.img.data, webp = WebP.Image.from(wd.webp), out;
   await WebP.Image.initLib();
   switch (wd.type) {
     case consts.IMGTYPE_WEBP:
@@ -31,10 +27,7 @@ async function saveWEBP(wd) {
   return { buffer: undefined, frame: out.frame, data: out.data };
 }
 async function saveWEBPFinal(wd) {
-  let webp = new WebP.Image();
-  webp.data = wd.webp.data;
-  webp.loaded = wd.webp.loaded;
-  webp.path = wd.webp.path;
+  let webp = WebP.Image.from(wd.webp);
   if (wd.isBuffer) { return { buffer: await webp.save(null) }; }
   else { await webp.save(wd.p); return { buffer: undefined }; }
 }
