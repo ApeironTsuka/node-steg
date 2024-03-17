@@ -1,6 +1,12 @@
 import fs from 'node:fs';
 import { createGzip, createGunzip, createBrotliCompress, createBrotliDecompress, constants } from 'node:zlib';
-import { createCipheriv, createDecipheriv, pbkdf2, createSecretKey, createHash, randomBytes } from 'node:crypto';
+import {
+         createCipheriv, createDecipheriv,
+         pbkdf2, scrypt,
+         createSecretKey, createPrivateKey, createPublicKey,
+         privateDecrypt, publicEncrypt,
+         createHash, randomBytes
+       } from 'node:crypto';
 import { Transform } from 'node:stream';
 import seedrandom from 'seedrandom';
 import argon2 from 'argon2';
@@ -168,7 +174,6 @@ export function getMD5Key(pw) {
   hash.update(pw);
   return hash.digest('hex');
 }
-export async function getCryptKey(...args) { return getCryptKeyPBKDF2(...args); } // DEPRECATED to be removed in 1.5
 export async function getCryptKeyPBKDF2(pass, salt, digest = 'sha1', iterations = 100000) {
   let res, rej, p = new Promise((a,b) => { res = a; rej = b; });
   pbkdf2(pass, salt, iterations, 32, digest, (err, key) => {
@@ -200,6 +205,23 @@ export async function getCryptKeyArgon2(type, pass, salt, pepper, memoryCost = 2
   hash = Buffer.from(arr[5], 'base64');
   return { hash, salt: osalt };
 }
+export async function getCryptKeySCrypt(pass, salt, cost = 16384, blockSize = 8, parallelization = 1) {
+  let res, rej, p = new Promise((a, b) => { res = a; rej = b; }), s = 128 * cost * blockSize;
+  if (s < 32 * 1024 * 1024) { s = 32 * 1024 * 1024; }
+  scrypt(pass, salt, 32, { cost, blockSize, parallelization, maxmem: s }, (err, key) => {
+    if (err) { rej(err); return; }
+    res(createSecretKey(key));
+  });
+  return p;
+}
+export async function getCryptKeyAsymPub(key) {
+  let ko = createPublicKey(key), k = randomBytes(32), enck = publicEncrypt(ko, k);
+  return { key: k, enck };
+}
+export async function getCryptKeyAsymPriv(pass, key) {
+  let ko = createPrivateKey(key);
+  return privateDecrypt(ko, pass);
+}
 export function generateIV() { return randomBytes(16); }
 export function cryptaes256(key, iv) { return createCipheriv('aes-256-cbc', key, iv); }
 export function decryptaes256(key, iv) { return createDecipheriv('aes-256-cbc', key, iv); }
@@ -214,7 +236,7 @@ export function decryptblowfish(key, iv) { return createDecipheriv('bf-cbc', key
 export async function packString(s, pw, salt) {
   let fmods = [], bufs = [], b, st;
   if (pw) {
-    let key = await getCryptKey(pw, salt || utilSalt), iv = generateIV();
+    let key = await getCryptKeyPBKDF2(pw, salt || utilSalt), iv = generateIV();
     b = Buffer.alloc(17);
     b[0] = 1;
     iv.copy(b, 1);
@@ -238,7 +260,7 @@ export async function unpackString(s, pw, salt) {
   let fmods = [], buf = Buffer.from(s, 'binary'), bufs = [];
   if ((buf[0]) && (!pw)) { throw new Error('Input blob is encrypted but no key provided'); }
   else if ((buf[0]) && (pw)) {
-    let key = await getCryptKey(pw, salt || utilSalt), iv = buf.slice(1, 17);
+    let key = await getCryptKeyPBKDF2(pw, salt || utilSalt), iv = buf.slice(1, 17);
     buf = buf.slice(16);
     fmods.unshift(decryptaes256(key, iv));
   }

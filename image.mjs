@@ -66,13 +66,13 @@ export class Image {
     if (map) { this.loadMap(typeof map == 'string' ? { path: map } : map); }
   }
   loadMap(o) {
-    let { path, buffer, name } = o, buf, { used } = this, start = 0;
+    let { path, buffer, name } = o, buf, { used } = this, start = 5;
     if (path) {
       try { buf = fs.readFileSync(path); }
       catch (e) { buf = fs.readFileSync(`${dirname(this.src)}/${path}`); }
     }
     else { buf = buffer; }
-    if (buf.toString('utf8', 0, 5) == 'STGIM') { start = 5; } // FIXME throw error in v1.5 if != 'STGIM'
+    if (buf.toString('utf8', 0, 5) != 'STGIM') { throw new Error('Not a valid image map'); }
     for (let i = start, l = buf.length; i < l; i += 4) {
       let x = buf.readUInt16LE(i), y = buf.readUInt16LE(i+2);
       used.count++;

@@ -1,8 +1,9 @@
 import { Writable } from 'node:stream';
+import fs from 'node:fs';
 import { Image } from './image.mjs';
 
 async function readStdin() {
-  let res, p = new Promise((r,r2) => { res = r; }), buffers = [], f;
+  let res, p = new Promise((r,r2) => { res = r; }), buffers = [], fileMode = false, f;
   process.stdin.resume();
   process.stdin.setRawMode(true);
   process.stdin.on('data', f = (chunk) => {
@@ -50,7 +51,12 @@ async function readStdin() {
       process.stdin.pause();
       process.stdin.off('data', f);
       process.stdout.write('\n');
-      res(r);
+      res(fileMode ? fs.readFileSync(r) : r);
+    }
+    else if (chunk[0] == 0x06) {
+      fileMode = !fileMode;
+      buffers.length = 0;
+      console.log(fileMode ? 'Switched to filename mode' : 'Switched to password mode');
     } else { buffers.push(chunk); }
   });
   return p;

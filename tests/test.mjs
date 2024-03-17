@@ -137,21 +137,21 @@ async function go() {
   console.log('Testing maps in image tables...');
   console.log('Creating map...');
   await steg.clear()
-        .inputImage({ path: 'tests/orig.webp', frame: 0 })
-        .outputImage('tests/tmp/out.webp')
-        .setImageTable([ { path: 'tests/orig.webp', frame: 1 }, { path: 'tests/orig.webp', frame: 2 } ], [ { path: 'tests/tmp/out.webp', frame: 1 }, { path: 'tests/tmp/out.webp', frame: 2, map: 'tests/tmp/webp.map' } ])
-        .moveImage(1)
-        .addText('Map created')
-        .save();
+            .inputImage({ path: 'tests/orig.webp', frame: 0 })
+            .outputImage('tests/tmp/out.webp')
+            .setImageTable([ { path: 'tests/orig.webp', frame: 1 }, { path: 'tests/orig.webp', frame: 2 } ], [ { path: 'tests/tmp/out.webp', frame: 1 }, { path: 'tests/tmp/out.webp', frame: 2, map: 'tests/tmp/webp.map' } ])
+            .moveImage(1)
+            .addText('Map created')
+            .save();
   console.log('Saving using map...');
   await steg.clear()
-        .inputImage({ path: 'tests/tmp/out.webp', frame: 0 })
-        .outputImage('tests/tmp/out2.webp')
-        .setGlobalMode(consts.MODE_A24BPP | consts.MODE_9BPP)
-        .setImageTable([ { path: 'tests/tmp/out.webp', frame: 1 }, { path: 'tests/tmp/out.webp', frame: 2, map: 'tests/tmp/webp.map' } ], [ { path: 'tests/tmp/out2.webp', frame: 1 }, { path: 'tests/tmp/out2.webp', frame: 2 } ])
-        .moveImage(1)
-        .addText('Did this also work?')
-        .save();
+            .inputImage({ path: 'tests/tmp/out.webp', frame: 0 })
+            .outputImage('tests/tmp/out2.webp')
+            .setGlobalMode(consts.MODE_A24BPP | consts.MODE_9BPP)
+            .setImageTable([ { path: 'tests/tmp/out.webp', frame: 1 }, { path: 'tests/tmp/out.webp', frame: 2, map: 'tests/tmp/webp.map' } ], [ { path: 'tests/tmp/out2.webp', frame: 1 }, { path: 'tests/tmp/out2.webp', frame: 2 } ])
+            .moveImage(1)
+            .addText('Did this also work?')
+            .save();
   console.log('Testing loading with map...');
   steg.clear().inputImage({ path: 'tests/tmp/out2.webp', frame: 0 });
   secs = await steg.load();
@@ -160,11 +160,11 @@ async function go() {
   console.log('Test using Buffer everywhere...');
   console.log('Saving when input image is a Buffer...');
   secs = await steg.clear()
-               .setBufferMap({ 'image.png': b1 })
-               .inputImage({ name: 'image.png' })
-               .outputImage({ name: 'out.png', buffer: true })
-               .addText('Did this work, too?')
-               .save();
+                   .setBufferMap({ 'image.png': b1 })
+                   .inputImage({ name: 'image.png' })
+                   .outputImage({ name: 'out.png', buffer: true })
+                   .addText('Did this work, too?')
+                   .save();
   console.log('Loading when input image is a Buffer...');
   steg.clear().inputImage({ name: 'out.png', buffer: secs[0].buffer });
   secs = await steg.load();
@@ -172,40 +172,40 @@ async function go() {
   console.log(await steg.extractAll(secs, './tests/tmp'));
   console.log('Saving when input image and image table are all Buffer...');
   secs = await steg.clear()
-               .setBufferMap({ 'image.png': b1, 'image2.png': b2 })
-               .inputImage({ name: 'image.png' })
-               .outputImage({ name: 'out.png', buffer: true })
-               .setImageTable([ { name: 'image.png' }, { name: 'image2.png' } ], [ { name: 'out.png', buffer: true }, { name: 'out2.png', buffer: true } ])
-               .moveImage(1)
-               .addText('This should also have worked')
-               .save();
+                   .setBufferMap({ 'image.png': b1, 'image2.png': b2 })
+                   .inputImage({ name: 'image.png' })
+                   .outputImage({ name: 'out.png', buffer: true })
+                   .setImageTable([ { name: 'image.png' }, { name: 'image2.png' } ], [ { name: 'out.png', buffer: true }, { name: 'out2.png', buffer: true } ])
+                   .moveImage(1)
+                   .addText('This should also have worked')
+                   .save();
   console.log('Loading when input image and such are all Buffer...');
   secs = await steg.clear()
-               .setBufferMap({ 'out.png': secs[0].buffer, 'out2.png': secs[1].buffer })
-               .inputImage({ name: 'out.png' })
-               .load();
+                   .setBufferMap({ 'out.png': secs[0].buffer, 'out2.png': secs[1].buffer })
+                   .inputImage({ name: 'out.png' })
+                   .load();
   console.log('Finished loading\nExtracting...');
   console.log(await steg.extractAll(secs, './tests/tmp'));
   console.log('Testing maps in image tables (buffers)...');
   console.log('Creating map...');
   secs = await steg.clear()
-               .setBufferMap({ 'image.png': b1, 'image2.png': b2 })
-               .inputImage({ name: 'image.png' })
-               .outputImage({ name: 'out.png', buffer: true })
-               .setImageTable([ { name: 'image.png' }, { name: 'image2.png' } ], [ { name: 'out.png', buffer: true }, { name: 'out2.png', buffer: true, map: { name: 'out2.map', buffer: true } } ])
-               .moveImage(1)
-               .addText('Map created')
-               .save();
+                   .setBufferMap({ 'image.png': b1, 'image2.png': b2 })
+                   .inputImage({ name: 'image.png' })
+                   .outputImage({ name: 'out.png', buffer: true })
+                   .setImageTable([ { name: 'image.png' }, { name: 'image2.png' } ], [ { name: 'out.png', buffer: true }, { name: 'out2.png', buffer: true, map: { name: 'out2.map', buffer: true } } ])
+                   .moveImage(1)
+                   .addText('Map created')
+                   .save();
   console.log('Saving using map...');
   secs = await steg.clear()
-               .setBufferMap({ 'out.png': secs[0].buffer, 'out2.png': secs[1].buffer, 'out2.map': t = secs[1].map.buffer })
-               .inputImage({ name: 'out.png' })
-               .outputImage({ name: 'out2.webp', buffer: true })
-               .setGlobalMode(consts.MODE_A24BPP | consts.MODE_9BPP)
-               .setImageTable([ { name: 'out.png' }, { name: 'out2.png', map: { name: 'out2.map' } } ], [ { name: 'out3.png', buffer: true }, { name: 'out4.png', buffer: true } ])
-               .moveImage(1)
-               .addText('Did this also work again?')
-               .save();
+                   .setBufferMap({ 'out.png': secs[0].buffer, 'out2.png': secs[1].buffer, 'out2.map': t = secs[1].map.buffer })
+                   .inputImage({ name: 'out.png' })
+                   .outputImage({ name: 'out2.webp', buffer: true })
+                   .setGlobalMode(consts.MODE_A24BPP | consts.MODE_9BPP)
+                   .setImageTable([ { name: 'out.png' }, { name: 'out2.png', map: { name: 'out2.map' } } ], [ { name: 'out3.png', buffer: true }, { name: 'out4.png', buffer: true } ])
+                   .moveImage(1)
+                   .addText('Did this also work again?')
+                   .save();
   console.log('Testing loading with map...');
   steg.clear()
       .setBufferMap({ 'out3.png': secs[0].buffer, 'out4.png': secs[1].buffer, 'out2.map': t })
@@ -215,11 +215,11 @@ async function go() {
   console.log(await steg.extractAll(secs, './tests/tmp'));
   console.log('Testing input files as buffers...');
   await steg.clear()
-        .inputImage('tests/text.clean.png')
-        .outputImage('tests/tmp/out.png')
-        .addFile(Buffer.from('Testing'), 'testfile')
-        .addText('Worked?')
-        .save();
+            .inputImage('tests/text.clean.png')
+            .outputImage('tests/tmp/out.png')
+            .addFile(Buffer.from('Testing'), 'testfile')
+            .addText('Worked?')
+            .save();
   console.log('Testing loading...');
   steg.clear().inputImage('tests/tmp/out.png');
   secs = await steg.load();
@@ -230,11 +230,11 @@ async function go() {
   console.log(secs, `(${secs})`);
   console.log('Testing bit shuffling...');
   await steg.clear()
-        .inputImage('tests/text.clean.png')
-        .outputImage('tests/tmp/out.png')
-        .setShuffleSeed(1234)
-        .addText('Worked?')
-        .save();
+            .inputImage('tests/text.clean.png')
+            .outputImage('tests/tmp/out.png')
+            .setShuffleSeed(1234)
+            .addText('Worked?')
+            .save();
   console.log('Testing loading...');
   steg.clear().inputImage('tests/tmp/out.png');
   secs = await steg.load();
@@ -243,17 +243,45 @@ async function go() {
   console.log(secs);
   console.log('Testing using Argon2id with advanced settings as KDF...');
   await steg.clear()
-        .inputImage('tests/text.clean.png')
-        .outputImage('tests/tmp/out.png')
-        .setEncryption(consts.CRYPT_AES256, undefined, consts.KDF_ARGON2ID, { adv: true, memoryCost: 2 ** 15, parallelism: 1 })
-        .addText('Worked?', consts.TEXT_HONOR_ENCRYPTION)
-        .save();
+            .inputImage('tests/text.clean.png')
+            .outputImage('tests/tmp/out.png')
+            .setEncryption(consts.CRYPT_AES256, undefined, consts.KDF_ARGON2ID, { adv: true, memoryCost: 2 ** 15, parallelism: 1 })
+            .addText('Worked?', consts.TEXT_HONOR_ENCRYPTION)
+            .save();
   console.log('Testing loading...');
   steg.clear()
       .inputImage('tests/tmp/out.png');
   secs = await steg.load();
   console.log('Finished loading\nExtracting...');
   console.log(await steg.extractAll(secs, './tests/tmp'));
+  console.log('Testing using SCrypt as KDF...');
+  await steg.clear()
+            .inputImage('tests/text.clean.png')
+            .outputImage('tests/tmp/out.png')
+            .setEncryption(consts.CRYPT_AES256, undefined, consts.KDF_SCRYPT)
+            .addText('Worked still?', consts.TEXT_HONOR_ENCRYPTION)
+            .save();
+  console.log('Testing loading...');
+  steg.clear()
+      .inputImage('tests/tmp/out.png');
+  secs = await steg.load();
+  console.log('Finished loading\nExtracting...');
+  console.log(await steg.extractAll(secs, './tests/tmp'));
+  console.log('Testing using key pair as KDF...');
+  await steg.clear()
+            .inputImage('tests/text.clean.png')
+            .outputImage('tests/tmp/out.png')
+            .setEncryption(consts.CRYPT_AES256, fs.readFileSync('tests/key.pub'), consts.KDF_ASYM)
+            .addText('Worked still?', consts.TEXT_HONOR_ENCRYPTION)
+            .save();
+  console.log('Testing loading...');
+  steg.clear()
+      .inputImage('tests/tmp/out.png')
+      .setPasswordHandler(function () { return fs.readFileSync('tests/key.priv'); });
+  secs = await steg.load();
+  console.log('Finished loading\nExtracting...');
+  console.log(await steg.extractAll(secs, './tests/tmp'));
+  steg.setPasswordHandler(pwhdlr);
   cleanTmpDir();
 }
 main().then(()=>{});

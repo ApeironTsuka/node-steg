@@ -9,7 +9,7 @@ import { pad, randr,
          alphaToBits, bitsToAlpha,
          gzip, gunzip,
          brotli, unbrotli,
-         getCryptKey, getCryptKeyPBKDF2, getCryptKeyArgon2,
+         getCryptKeyPBKDF2, getCryptKeyArgon2, getCryptKeySCrypt, getCryptKeyAsymPriv, getCryptKeyAsymPub,
          getMD5Key, generateIV,
          cryptaes256, decryptaes256,
          cryptcamellia256, decryptcamellia256,
@@ -26,7 +26,8 @@ const CRYPT_SALT = {
   v11: '546ac12e6786afb81045a6401a0e0342cb341b450cfc06f87e081b7ec4cae6a7',
   v12: '192f8633473d2a6e8a35e886d3f5c29bdf807bab22c73630efb54cc11d9aed23',
   v13: 'cbd55f4182df039b40b20473528f2a658a102d20b87eedfe5b82f13dc414fe03',
-  v14: '21e96ad4e34e891fcafbe8a6b690d2fd2de3fa57b285f307a5ee67770fac2b8b'
+  v14: '21e96ad4e34e891fcafbe8a6b690d2fd2de3fa57b285f307a5ee67770fac2b8b',
+  v15: 'f02a8050df8ebb2dd11ef4320e420db27eb6963b90d6a16bacb3ecb08669a352'
 };
 function getSalt(a, b, h, asBuffer) {
   let salt;
@@ -37,6 +38,7 @@ function getSalt(a, b, h, asBuffer) {
     case 2: salt = CRYPT_SALT.v12; break;
     case 3: salt = CRYPT_SALT.v13; break;
     case 4: salt = CRYPT_SALT.v14; break;
+    case 5: salt = CRYPT_SALT.v15; break;
     default: throw new Error(`Unknown minor version ${b}`);
   }
   return asBuffer ? Buffer.from(salt, 'hex') : salt;
@@ -60,7 +62,7 @@ export class v1 extends Steg {
         verMinor = input.verMinor || VERSION_MINOR;
     if (verMajor != VERSION_MAJOR) { throw new Error(`Trying to build a version ${verMajor}.x with a ${VERSION_MAJOR}.x constructor`); }
     switch (verMinor) {
-      case 0: case 1: case 2: case 3: case 4: break;
+      case 0: case 1: case 2: case 3: case 4: case 5: break;
       default: throw new Error(`Trying to build an unsupported version ${verMajor}.${verMinor}`);
     }
     this.verMajor = verMajor;
@@ -110,7 +112,7 @@ export class v1 extends Steg {
     switch (verMinor) {
       case 0: img.writeBits(alphaToBits(this.alphaThresh) + '00000000000'); break;
       case 1: case 2: img.writeBits(alphaToBits(this.alphaThresh) + pad(decToBin(modeMask), 3, '0') + '00000000'); break;
-      case 3: case 4: img.writeBits(alphaToBits(this.alphaThresh) + pad(decToBin(modeMask), 3, '0')); break;
+      case 3: case 4: case 5: img.writeBits(alphaToBits(this.alphaThresh) + pad(decToBin(modeMask), 3, '0')); break;
     }
     if (headmodeMask != modeMask) { img.flush(); }
     this.master.modeMask = this.modeMask = modeMask;
@@ -128,6 +130,13 @@ export class v1 extends Steg {
     print(Channels.NORMAL, `Number of pixels changed in ${input.out.path || input.out.name || input.out}${img.frame !== undefined ? ' frame '+img.frame : ''}: ${img.used.count} of ${img.width * img.height} (${Math.floor(img.used.count / (img.width * img.height) * 10000) / 100}%)`);
     delete this.table;
     delete this.fullTable;
+    if (this.master.clearBuffs) {
+      for (let i = 0, buffs = this.master.clearBuffs, l = buffs.length; i < l; i++) {
+        buffs[i].fill(0);
+        delete buffs[i];
+      }
+      this.master.clearBuffs.length = 0;
+    }
     return ret;
   }
   async load(input) {
@@ -173,12 +182,12 @@ export class v1 extends Steg {
     }
     verMinor = img.readInt(6);
     switch (verMinor) {
-      case 0: case 1: case 2: case 3: case 4: break;
+      case 0: case 1: case 2: case 3: case 4: case 5: break;
       default: throw new Error(`Unsupported version ${verMajor}.${verMinor}`);
     }
     print(Channels.VVERBOSE, `Got version ${verMajor}.${verMinor}`);
     if (verMinor == 1) {
-      if (map) { print(Channels.NORMAL, 'Warning: Version 1.1 found but `map` is in use, which is a 1.2 feature'); }
+      if (map) { print(Channels.NORMAL, 'Warning: Version 1.1 found but `map` is in use, which is a 1.2+ feature'); }
       if (usingInitPos) { print(Channels.NORMAL, 'Warning: Version 1.1 found but initial cursor is in use'); }
     }
     this.verMajor = verMajor;
@@ -220,6 +229,13 @@ export class v1 extends Steg {
     for (let i = 0; i < secCount; i++) {
       ret = await this.#readSec();
       if (!ret.v) { throw new Error(`Unknown sec id ${ret.secId}`); }
+    }
+    if (this.master.clearBuffs) {
+      for (let i = 0, buffs = this.master.clearBuffs, l = buffs.length; i < l; i++) {
+        buffs[i].fill(0);
+        delete buffs[i];
+      }
+      this.master.clearBuffs.length = 0;
     }
     return [ ...this._files, ...this._partialFiles, ...this._texts ];
   }
@@ -631,19 +647,40 @@ export class v1 extends Steg {
           case consts.KDF_PBKDF2:
             enc.key = await getCryptKeyPBKDF2(sec.pw, getSalt(this.verMajor, this.verMinor, this.salt), 'sha512', sec.adv ? sec.iterations : 1000000);
             break;
+          case consts.KDF_SCRYPT:
+            {
+              let arg = (n) => { return sec.adv ? sec[n] : undefined; };
+              enc.key = await getCryptKeySCrypt(sec.pw, getSalt(this.verMajor, this.verMinor, this.salt), arg('cost'), arg('blockSize'), arg('parallelization'));
+            }
+            break;
+          case consts.KDF_ASYM:
+            {
+              let { key, enck } = await getCryptKeyAsymPub(sec.pw);
+              enc.key = key;
+              enc.enck = enck;
+            }
+            break;
         }
         break;
     }
     sec.pw.fill(0);
     if (this.verMinor >= 4) {
       print(Channels.VERBOSE, 'Packing KDF...');
-      img.writeInt(sec.kdf, 2);
+      switch (this.verMinor) {
+        case 4: img.writeInt(sec.kdf, 2); break;
+        case 5: default: img.writeInt(sec.kdf, 3); break;
+      }
       print(Channels.VERBOSE, 'Packing advanced setting flag...');
       img.writeInt(sec.adv ? 1 : 0, 1);
       switch (sec.kdf) {
         case consts.KDF_ARGON2I: case consts.KDF_ARGON2D: case consts.KDF_ARGON2ID:
           print(Channels.VERBOSE, 'Packing Argon2 salt...');
           for (let i = 0; i < 16; i++) { img.writeInt(enc.salt[i], 8); }
+          break;
+        case consts.KDF_ASYM:
+          print(Channels.VERBOSE, 'Packing encrypted key...');
+          for (let i = 0; i < 256; i++) { img.writeInt(enc.enck[i], 8); }
+          enc.enck.fill(0);
           break;
         default: break;
       }
@@ -661,6 +698,14 @@ export class v1 extends Steg {
             print(Channels.VERBOSE, 'Packing PBKDF2 advanced settings...\nPacking iterations...');
             img.writeVLQ(sec.iterations, 8);
             break;
+          case consts.KDF_SCRYPT:
+            print(Channels.VERBOSE, 'Packing SCrypt advanced settings...\nPacking cpu/memory cost...');
+            img.writeVLQ(sec.cost, 8);
+            print(Channels.VERBOSE, 'Packing block size...');
+            img.writeVLQ(sec.blockSize, 8);
+            print(Channels.VERBOSE, 'Packing parallelization...');
+            img.writeVLQ(sec.parallelization, 8);
+            break;
         }
       }
     }
@@ -670,6 +715,9 @@ export class v1 extends Steg {
     print(Channels.VERBOSE, 'Packing IV...');
     for (let i = 0; i < 16; i++) { img.writeInt(enc.iv[i], 8); }
     master.state.encrypt = enc;
+    if (!master.state.clearBuffs) { master.state.clearBuffs = []; }
+    if (enc.key.fill) { master.state.clearBuffs.push(enc.key); }
+    master.state.clearBuffs.push(enc.iv);
   }
   async #packSecPartialFile(sec) {
     let { img, master } = this, table = master.state.partialTable, p = sec.path, isBuf = typeof p !== 'string', b, f;
@@ -1047,7 +1095,7 @@ export class v1 extends Steg {
     let { img, master } = this, enc = {}, pw;
     if (rem) { print(Channels.VERBOSE, 'Clearing SEC_ENCRYPTION...'); delete master.state.encrypt; return; }
     let arg = (n, d = undefined) => { return enc.adv ? enc[n] : d; };
-    print(Channels.VERBOSE, 'Reading SEC_ENCRYPTION...\n');
+    print(Channels.VERBOSE, 'Reading SEC_ENCRYPTION...');
     if (master.state.pws.length) { pw = master.state.pws.shift(); if (!(pw instanceof Buffer)) { pw = Buffer.from(pw); } }
     else { pw = await this.#requestPassword(); }
     switch (this.verMinor) {
@@ -1059,7 +1107,10 @@ export class v1 extends Steg {
         break;
       default:
         print(Channels.VERBOSE, 'Reading KDF...');
-        enc.kdf = img.readInt(2);
+        switch (this.verMinor) {
+          case 4: enc.kdf = img.readInt(2); break;
+          case 5: default: enc.kdf = img.readInt(3); break;
+        }
         print(Channels.VVERBOSE, `Got KDF ${enc.kdf}`);
         print(Channels.VERBOSE, 'Reading advanced settings flag...');
         enc.adv = img.readInt(1);
@@ -1092,7 +1143,31 @@ export class v1 extends Steg {
               enc.iterations = img.readVLQ(8);
               print(Channels.VVERBOSE, `Got ${enc.iterations}`);
             }
-            enc.key = await getCryptKeyPBKDF2(pw, getSalt(this.verMajor, this.verMinor, this.salt), 'cha512', arg('iterations', 1000000));
+            enc.key = await getCryptKeyPBKDF2(pw, getSalt(this.verMajor, this.verMinor, this.salt), 'sha512', arg('iterations', 1000000));
+            break;
+          case consts.KDF_SCRYPT:
+            if (enc.adv) {
+              print(Channels.VERBOSE, 'Reading cpu/memory cost...');
+              enc.cost = img.readVLQ(8);
+              print(Channels.VVERBOSE, `Got ${enc.cost}`);
+              print(Channels.VERBOSE, 'Reading block size...');
+              enc.blockSize = img.readVLQ(8);
+              print(Channels.VVERBOSE, `Got ${enc.blockSize}`);
+              print(Channels.VERBOSE, 'Reading parallelization...');
+              enc.parallelization = img.readVLQ(8);
+              print(Channels.VVERBOSE, `Got ${enc.parallelization}`);
+            }
+            enc.key = await getCryptKeySCrypt(pw, getSalt(this.verMajor, this.verMinor, this.salt), arg('cost'), arg('blockSize'), arg('parallelization'));
+            break;
+          case consts.KDF_ASYM:
+            {
+              let enck = Buffer.alloc(256);
+              print(Channels.VERBOSE, 'Reading encrypted key...');
+              for (let i = 0; i < 256; i++) { enck[i] = img.readInt(8); }
+              print(Channels.VVERBOSE, `Got encrypted key ${enck.toString('hex')}`);
+              enc.key = await getCryptKeyAsymPriv(enck, pw);
+              enck.fill(0);
+            }
             break;
         }
         break;
@@ -1111,13 +1186,16 @@ export class v1 extends Steg {
         if (this.verMinor < 3) { throw new Error('SEC_ENCRYPTION found using CHACHA20 or BLOWFISH in a version < 1.3; This is not valid and may be a sign of a corrupt or invalid image. Aborting.'); }
         break;
       case consts.CRYPT_AES256: break;
-      default: print(Channels.VERBOSE, 'Unknown encryption type specified, doing nothing...'); return;
+      default: print(Channels.VERBOSE, 'Unknown or no encryption type specified, doing nothing...'); return;
     }
     enc.iv = new Buffer.alloc(16);
     print(Channels.VERBOSE, 'Reading IV...');
     for (let i = 0; i < 16; i++) { enc.iv[i] = img.readInt(8); }
     print(Channels.VVERBOSE, `Got IV ${enc.iv.toString('hex')}`);
     master.state.encrypt = enc;
+    if (!master.state.clearBuffs) { master.state.clearBuffs = []; }
+    if (enc.key.fill) { master.state.clearBuffs.push(enc.key); }
+    master.state.clearBuffs.push(enc.iv);
   }
   async #readSecPartialFile(rem) {
     let { img, master } = this, f = { piece: 0 }, table = master.state.partialTable;
@@ -1348,7 +1426,7 @@ export class Builder extends _Builder {
     this.verMajor = verMajor;
     this.verMinor = verMinor;
     switch (verMajor) { case 1: break; default: throw new Error(`Unknown version ${verMajor}.x`); }
-    switch (verMinor) { case 0: case 1: case 2: case 3: case 4: break; default: throw new Error(`Unknown version ${verMajor}.${verMinor}`); }
+    switch (verMinor) { case 0: case 1: case 2: case 3: case 4: case 5: break; default: throw new Error(`Unknown version ${verMajor}.${verMinor}`); }
     this.clear();
   }
   clear() {
@@ -1452,7 +1530,7 @@ export class Builder extends _Builder {
     return this;
   }
   clearCompression() { this.#out.secs.push({ id: consts.SEC_COMPRESSION, rem: true }); return this; }
-  setEncryption(type, pw, kdf = consts.KDF_ARGON2ID, { adv = false, iterations = 1000000, memoryCost = 65536, timeCost = 50, parallelism = 8 } = {}) {
+  setEncryption(type, pw, kdf = consts.KDF_ARGON2ID, { adv = false, iterations = 1000000, memoryCost = 65536, timeCost = 50, parallelism = 8, cost = 16384, blockSize = 8, parallelization = 1 } = {}) {
     switch (type) {
       case consts.CRYPT_AES256:
       case consts.CRYPT_CAMELLIA256:
@@ -1467,6 +1545,8 @@ export class Builder extends _Builder {
       case consts.KDF_ARGON2I:
       case consts.KDF_ARGON2D:
       case consts.KDF_ARGON2ID:
+      case consts.KDF_SCRYPT:
+      case consts.KDF_ASYM:
         break;
       default: throw new Error(`Unknown encryption kdf ${kdf}`);
     }
@@ -1531,7 +1611,8 @@ export class Builder extends _Builder {
         key = await (this.getPasswordHandler())();
         if (salt !== false) { s = salt === true ? this.#out.salt : convertSalt(salt, raw); }
       }
-      if (blob.toString('utf8', 0, 5) == 'STGLO') { blob = blob.slice(5); } // FIXME throw error in v1.5 if != 'STGLO'
+      if (blob.toString('utf8', 0, 5) != 'STGLO') { throw new Error('Not a valid options map'); }
+      blob = blob.slice(5);
       this.setLoadOpts(JSON.parse(await unpackString(blob, key, s)), false);
     }
   }

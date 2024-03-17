@@ -29,6 +29,9 @@ CHANGELOG:
     changed default pbkdf2 digest to sha512 and iterations to 1,000,000 (were sha1 and 100,000 respectively prior)
     changed format of SEC_ENCRYPTION entirely
       added fields for kdf before the algorithm
+  v1.5
+    added support for scrypt kdf in SEC_ENCRYPTION
+    changed kdf field in SEC_ENCRYPTION from 2bit to 3bit
 
 read(): read amount of data honoring any settings/arguments. Any overread is cached for the next read(s)
 vlq(): read a uint using the given chunk size. Any overread is cached for the next read(s)
@@ -111,10 +114,12 @@ Sections:
       read(4bit): compression quality (0-11)
       read(1bit): text mode
   SEC_ENCRYPTION:
-    read(2bit): kdf (from const table)
+    read(3bit): kdf (from const table)
     read(1bit): advanced kdf settings
     if kdf is argon2i/argon2d/argon2id:
       read(128bit): salt
+    if kdf is asym:
+      read(256bit): encrypted key
     advanced settings:
       pbkdf2
         vlq(8): iterations
@@ -122,6 +127,10 @@ Sections:
         vlq(8): memory cost
         vlq(8): time cost
         vlq(8): parallelism
+      scrypt:
+        vlq(8): cpu/memory cost
+        vlq(8): block size
+        vlq(8): parallelization
     read(4bit): algorithm (from const table)
     AES256, CAMELLIA256, ARIA256, CHACHA20, BLOWFISH:
       read(128bit): IV
@@ -137,6 +146,11 @@ Sections:
       salt can be overridden
     if kdf is argon2id
       key is generated from password via argon2id (defaults time cost 50, memory cost 65536, parallelism 8, unique per-version 32byte pepper)
+    if kdf is scrypt
+      key is generated from password via scrypt (defaults cost 16384, block size 8, parallelization 1, unique per-version 32byte salt)
+    if kdf is asym
+      when encrypting, the public key is used to encrypt + store a generated random key
+      when decrypting, the private key is used to decrypt the stored key
   SEC_PARTIALFILE:
     vlq(8): file size
     read(string): file name

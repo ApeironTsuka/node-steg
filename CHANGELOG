@@ -1,5 +1,15 @@
 This document only covers changes to the API.
 
+v1.5.0
+  Added KDF_SCRYPT to consts.mjs
+  Added support for using SCrypt as KDF for SEC_ENCRYPTION. Defaults: Cost 16384, block size 8, parallelization 1.
+  Added KDF_ASYM to consts.mjs
+  Added support for using a public/private key pair to encrypt/decrypt a generated final key for SEC_ENCRYPTION
+  Added ctrl+f (0x06) as a toggle between password and file mode in .cliPasswordHandler. When in file mode, the entered password is read as a file.
+  Throw an error in Image.loadMap when file/buffer doesn't start with STGIM
+  Throw an error in v1.setLoadOpts when file/buffer doesn't start with STGLO
+  Fixed a typo that affected using PBKDF2
+
 v1.4.0
   Added 'useBufs' flag to pack()/unpack()
   Added Builder useTempBuffers()

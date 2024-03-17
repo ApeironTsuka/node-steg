@@ -1,6 +1,6 @@
 export default {
   LATEST_MAJOR: 1,
-  LATEST_MINOR: 4,
+  LATEST_MINOR: 5,
 
   SEC_MODE:              1,
   SEC_RECT:              2,
@@ -46,6 +46,8 @@ export default {
   KDF_ARGON2I:  1,
   KDF_ARGON2D:  2,
   KDF_ARGON2ID: 3,
+  KDF_SCRYPT:   4,
+  KDF_ASYM:     5,
 
   TEXT_HONOR_COMPRESSION_DEP: 0b1000, // < v1.4
   TEXT_HONOR_ENCRYPTION_DEP:  0b0100,

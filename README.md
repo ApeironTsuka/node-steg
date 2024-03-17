@@ -8,7 +8,7 @@ You can also import `util` if you want to control how verbose it is for debuggin
 Now, lets create a builder. <br />
 `let steg = CreateBuilder();` <br />
 The arguments are `CreateBuilder([major version, [minor version]])`, if you want to use a specific version. <br />
-At the time of writing, the default is v1.4.
+At the time of writing, the default is v1.5.
 
 For just packing a file in and calling it a day,
 
@@ -277,7 +277,7 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 #### `clearCompression()`
   Clear an active `setCompression()`.
 
-#### `setEncryption(type, pw = undefined, kdf = KDF_ARGON2ID, { adv = false, memoryCost = 65536, timeCost = 50, parallelism = 8, iterations = 1000000 } = {})`
+#### `setEncryption(type, pw = undefined, kdf = KDF_ARGON2ID, { adv = false, memoryCost = 65536, timeCost = 50, parallelism = 8, iterations = 1000000, cost = 16384, blockSize = 8, parallelization = 1 } = {})`
   Set the active encryption algorithm to run files/text through.<br />
   Currently supported algorithms for `type`:<br />
 *  `CRYPT_AES256` (AES-256-CBC).
@@ -292,10 +292,14 @@ The term "out-of-band" is used to describe information that's needed but *not* s
 * `KDF_ARGON2I`
 * `KDF_ARGON2D`
 * `KDF_ARGON2ID`
+* `KDF_SCRYPT`
+* `KDF_ASYM`
   Variants of Argon2. Defaults to Argon2id, memory cost 64MiB, time cost 50, parallelism 8.<br />
   If `adv` is set to `true`...<br />
 * `memoryCost`, `timeCost`, and `parallelism` only affect Argon2
 * `iterations` only affects PBKDF2
+* `cost`, `blockSize`, and `parallelization` only affect SCrypt
+  If using `KDF_ASYM`, then `pw` must be the public key in `pem` format. When decrypting later, the private key must be passed in `pem` format.<br />
 
 #### `clearEncryption()`
   Clear an active `setEncryption()`.
@@ -458,7 +462,7 @@ For packing:
         `<type>` can be one of..<br />
           `gzip <level>`: Use gzip. `<level>` is between 0 and 9.<br />
           `brotli <level> [text]`: Use Brotli. `<level>` is between 0 and 11. If `[text]` is provided, set Brotli into text compression mode.<br />
-*  *   `encrypt <type> [ [kdf] [ <adv> [<memory cost> <time cost> <parallelism>] [<iterations>] ] ]`<br />
+*  *   `encrypt <type> [ [kdf] [ <adv> [<memory cost> <time cost> <parallelism>] [<iterations>] [<cost> <block size> <parallelization>] ] ]`<br />
         `<type>` can be one of..<br />
           `aes256`: Use AES 256.<br />
           `camellia256`: Use CAMELLIA 256.<br />
@@ -470,9 +474,11 @@ For packing:
           `argon2i`<br />
           `argon2d`<br />
           `argon2id` (default)<br />
+          `scrypt`<br />
         If `[kdf]` and `<adv>` are supplied..<br />
           `<memory cost>`, `<time cost>`, and `<parallelism>`: Settings for Argon2.<br />
           `<iterations>`: Setting for PBKDF2.<br />
+          `<cost>`, `<block size>`, and `<parallelization>`: Settings for SCrypt.<br />
 *  *   `partialfile <path> <index> [name] [comp]`<br />
         Define a file at `<path>` that is to be saved in discreet chunks. `<index>` is an arbitrary integer to use to refer to it in `partialfilepiece` blocks. If `[name]` is defined, use `[name]` as the filename rather than the base filename. If `[comp]` is provided, consider the file already compressed.
 *  *   `partialfilepiece <index> <size> [final]`<br />

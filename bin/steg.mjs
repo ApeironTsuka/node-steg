@@ -149,6 +149,9 @@ function parseCmdLine(args) {
                 else if (test(i + 1, true, 'argon2d')) { s.kdf = 'argon2d'; i++; }
                 else if (test(i + 1, true, 'argon2id')) { s.kdf = 'argon2id'; i++; }
                 else if (test(i + 1, true, 'pbkdf2')) { s.kdf = 'pbkdf2'; i++; }
+                else if (test(i + 1, true, 'scrypt')) { s.kdf = 'scrypt'; i++; }
+                else if (test(i + 1, true, 'asym')) { s.kdf = 'asym'; i++; }
+                if (s.kdf == 'asym') { test(i + 1); s.p = args[++i]; }
                 if (test(i + 1, true, 'adv')) {
                   s.adv = true;
                   i++;
@@ -160,6 +163,11 @@ function parseCmdLine(args) {
                       break;
                     case 'pbkdf2':
                       test(i + 1); s.iterations = args[++i];
+                      break;
+                    case 'scrypt':
+                      test(i + 1); s.cost = args[++i];
+                      test(i + 1); s.blockSize = args[++i];
+                      test(i + 1); s.parallelization = args[++i];
                       break;
                   }
                 }
@@ -354,7 +362,7 @@ async function run() {
           case 'encrypt':
             if (sec.clear) { bldr.clearEncryption(); }
             else {
-              let type, kdf;
+              let type, kdf, p = undefined;
               switch (sec.type) {
                 case 'aes256': type = consts.CRYPT_AES256; break;
                 case 'camellia256': type = consts.CRYPT_CAMELLIA256; break;
@@ -368,9 +376,11 @@ async function run() {
                 case 'argon2i': kdf = consts.KDF_ARGON2I; break;
                 case 'argon2d': kdf = consts.KDF_ARGON2D; break;
                 case 'argon2id': kdf = consts.KDF_ARGON2ID; break;
+                case 'scrypt': kdf = consts.KDF_SCRYPT; break;
+                case 'asym': kdf = consts.KDF_ASYM; p = fs.readFileSync(sec.p); break;
                 default: throw new Error(`Unknown encryption kdf ${sec.kdf}`); break;
               }
-              bldr.setEncryption(type, undefined, kdf, sec);
+              bldr.setEncryption(type, p, kdf, sec);
             }
             break;
           case 'partialfile': bldr.addPartialFile(sec.path, sec.name, sec.index, sec.compressed); break;
